@@ -133,10 +133,25 @@ export async function writeDraft(
   return withWriteLock(seed, async () => {
     let currentVersion = 0;
     let createdAt = Date.now();
-    const existing = await readDraft(seed);
-    if (existing) {
-      currentVersion = existing.version ?? 0;
-      createdAt = existing.createdAt ?? createdAt;
+
+    if (USE_BLOB) {
+      // For Blob, check if it exists without fetching content (avoids 403)
+      try {
+        const blobInfo = await head(getBlobPath(seed));
+        // Blob exists - we can't read the version without fetching (403 issue)
+        // So we use allowOverwrite to overwrite and increment version optimistically
+        currentVersion = 1; // Assume version 1+ for existing blobs
+      } catch {
+        // Blob doesn't exist yet, start at version 0
+        currentVersion = 0;
+      }
+    } else {
+      // For filesystem, read existing version normally
+      const existing = await readDraft(seed);
+      if (existing) {
+        currentVersion = existing.version ?? 0;
+        createdAt = existing.createdAt ?? createdAt;
+      }
     }
 
     const newVersion = currentVersion + 1;
@@ -154,6 +169,7 @@ export async function writeDraft(
           access: "public",
           addRandomSuffix: false,
           contentType: "application/json",
+          allowOverwrite: true, // Allow overwriting existing blobs
         });
       } catch (err: any) {
         console.error("[writeDraft] Blob put failed:", err?.message || err);
