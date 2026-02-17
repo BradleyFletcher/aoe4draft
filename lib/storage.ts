@@ -2,12 +2,17 @@ import fs from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import crypto from "crypto";
+import { put, del, list, head } from "@vercel/blob";
 
 const DATA_DIR = path.join(process.cwd(), "data", "drafts");
-const MAX_PAYLOAD_BYTES = 512 * 1024; // 512KB max per draft file
+const MAX_PAYLOAD_BYTES = 512 * 1024; // 512KB max per draft
 const DRAFT_TTL_DAYS = 7; // auto-delete drafts older than 7 days
+const BLOB_PREFIX = "drafts/";
 
-// Strict seed format: 12-char alphanumeric uppercase
+// Use Blob storage in production (Vercel), filesystem locally
+const USE_BLOB = process.env.VERCEL === "1";
+
+// Strict seed format: 8-16 char alphanumeric uppercase
 const SEED_REGEX = /^[A-Z0-9]{8,16}$/;
 
 export function generateSecureSeed(): string {
@@ -34,6 +39,10 @@ function getShardDir(seed: string): string {
 
 function getFilePath(seed: string): string {
   return path.join(getShardDir(seed), `${seed}.json`);
+}
+
+function getBlobPath(seed: string): string {
+  return `${BLOB_PREFIX}${seed}.json`;
 }
 
 function ensureDir(dir: string) {
@@ -70,12 +79,23 @@ export async function readDraft(seed: string): Promise<{
 } | null> {
   if (!isValidSeed(seed)) return null;
 
-  const filePath = getFilePath(seed);
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  if (USE_BLOB) {
+    try {
+      const blobInfo = await head(getBlobPath(seed));
+      const res = await fetch(blobInfo.downloadUrl);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  } else {
+    const filePath = getFilePath(seed);
+    try {
+      const raw = await fs.readFile(filePath, "utf-8");
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -105,20 +125,12 @@ export async function writeDraft(
 
   // Serialize writes per seed to prevent version race conditions
   return withWriteLock(seed, async () => {
-    const shardDir = getShardDir(seed);
-    ensureDir(shardDir);
-    const filePath = getFilePath(seed);
-
-    // Read existing version
     let currentVersion = 0;
     let createdAt = Date.now();
-    try {
-      const raw = await fs.readFile(filePath, "utf-8");
-      const existing = JSON.parse(raw);
+    const existing = await readDraft(seed);
+    if (existing) {
       currentVersion = existing.version ?? 0;
       createdAt = existing.createdAt ?? createdAt;
-    } catch {
-      /* fresh file */
     }
 
     const newVersion = currentVersion + 1;
@@ -130,7 +142,19 @@ export async function writeDraft(
       updatedAt: Date.now(),
     };
 
-    await fs.writeFile(filePath, JSON.stringify(data));
+    if (USE_BLOB) {
+      await put(getBlobPath(seed), JSON.stringify(data), {
+        access: "public",
+        addRandomSuffix: false,
+        contentType: "application/json",
+      });
+    } else {
+      const shardDir = getShardDir(seed);
+      ensureDir(shardDir);
+      const filePath = getFilePath(seed);
+      await fs.writeFile(filePath, JSON.stringify(data));
+    }
+
     return { ok: true, version: newVersion };
   });
 }
@@ -138,55 +162,92 @@ export async function writeDraft(
 export async function deleteDraft(seed: string): Promise<boolean> {
   if (!isValidSeed(seed)) return false;
 
-  const filePath = getFilePath(seed);
-  try {
-    await fs.unlink(filePath);
-    return true;
-  } catch {
-    return false;
+  if (USE_BLOB) {
+    try {
+      const blobInfo = await head(getBlobPath(seed));
+      await del(blobInfo.url);
+      return true;
+    } catch {
+      return true; // Already deleted or doesn't exist
+    }
+  } else {
+    const filePath = getFilePath(seed);
+    try {
+      await fs.unlink(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
 // Clean up drafts older than DRAFT_TTL_DAYS
 export async function cleanupOldDrafts(): Promise<number> {
-  if (!existsSync(DATA_DIR)) return 0;
-
   const cutoff = Date.now() - DRAFT_TTL_DAYS * 24 * 60 * 60 * 1000;
   let deleted = 0;
 
-  try {
-    const shards = await fs.readdir(DATA_DIR);
-    for (const shard of shards) {
-      const shardPath = path.join(DATA_DIR, shard);
-      const stat = await fs.stat(shardPath);
-      if (!stat.isDirectory()) continue;
+  if (USE_BLOB) {
+    try {
+      let cursor: string | undefined;
+      do {
+        const result = await list({ prefix: BLOB_PREFIX, cursor });
+        const expiredUrls: string[] = [];
+        for (const blob of result.blobs) {
+          try {
+            const res = await fetch(blob.downloadUrl);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.updatedAt && data.updatedAt < cutoff) {
+                expiredUrls.push(blob.url);
+              }
+            }
+          } catch {
+            expiredUrls.push(blob.url);
+          }
+        }
+        if (expiredUrls.length > 0) {
+          await del(expiredUrls);
+          deleted += expiredUrls.length;
+        }
+        cursor = result.hasMore ? result.cursor : undefined;
+      } while (cursor);
+    } catch {
+      /* ignore cleanup errors */
+    }
+  } else {
+    if (!existsSync(DATA_DIR)) return 0;
+    try {
+      const shards = await fs.readdir(DATA_DIR);
+      for (const shard of shards) {
+        const shardPath = path.join(DATA_DIR, shard);
+        const stat = await fs.stat(shardPath);
+        if (!stat.isDirectory()) continue;
 
-      const files = await fs.readdir(shardPath);
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-        const filePath = path.join(shardPath, file);
-        try {
-          const raw = await fs.readFile(filePath, "utf-8");
-          const data = JSON.parse(raw);
-          if (data.updatedAt && data.updatedAt < cutoff) {
-            await fs.unlink(filePath);
+        const files = await fs.readdir(shardPath);
+        for (const file of files) {
+          if (!file.endsWith(".json")) continue;
+          const filePath = path.join(shardPath, file);
+          try {
+            const raw = await fs.readFile(filePath, "utf-8");
+            const data = JSON.parse(raw);
+            if (data.updatedAt && data.updatedAt < cutoff) {
+              await fs.unlink(filePath);
+              deleted++;
+            }
+          } catch {
+            await fs.unlink(filePath).catch(() => {});
             deleted++;
           }
-        } catch {
-          // Corrupt file, delete it
-          await fs.unlink(filePath).catch(() => {});
-          deleted++;
+        }
+
+        const remaining = await fs.readdir(shardPath);
+        if (remaining.length === 0) {
+          await fs.rmdir(shardPath);
         }
       }
-
-      // Remove empty shard directories
-      const remaining = await fs.readdir(shardPath);
-      if (remaining.length === 0) {
-        await fs.rmdir(shardPath);
-      }
+    } catch {
+      /* ignore cleanup errors */
     }
-  } catch {
-    /* ignore cleanup errors */
   }
 
   return deleted;
@@ -194,21 +255,34 @@ export async function cleanupOldDrafts(): Promise<number> {
 
 // List active drafts count (for monitoring)
 export async function countActiveDrafts(): Promise<number> {
-  if (!existsSync(DATA_DIR)) return 0;
-
-  let count = 0;
-  try {
-    const shards = await fs.readdir(DATA_DIR);
-    for (const shard of shards) {
-      const shardPath = path.join(DATA_DIR, shard);
-      const stat = await fs.stat(shardPath);
-      if (!stat.isDirectory()) continue;
-      const files = await fs.readdir(shardPath);
-      count += files.filter((f) => f.endsWith(".json")).length;
+  if (USE_BLOB) {
+    try {
+      let count = 0;
+      let cursor: string | undefined;
+      do {
+        const result = await list({ prefix: BLOB_PREFIX, cursor });
+        count += result.blobs.length;
+        cursor = result.hasMore ? result.cursor : undefined;
+      } while (cursor);
+      return count;
+    } catch {
+      return 0;
     }
-  } catch {
-    /* ignore */
+  } else {
+    if (!existsSync(DATA_DIR)) return 0;
+    let count = 0;
+    try {
+      const shards = await fs.readdir(DATA_DIR);
+      for (const shard of shards) {
+        const shardPath = path.join(DATA_DIR, shard);
+        const stat = await fs.stat(shardPath);
+        if (!stat.isDirectory()) continue;
+        const files = await fs.readdir(shardPath);
+        count += files.filter((f) => f.endsWith(".json")).length;
+      }
+    } catch {
+      /* ignore */
+    }
+    return count;
   }
-
-  return count;
 }
