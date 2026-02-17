@@ -82,7 +82,13 @@ export async function readDraft(seed: string): Promise<{
   if (USE_BLOB) {
     try {
       const blobInfo = await head(getBlobPath(seed));
-      const res = await fetch(blobInfo.downloadUrl);
+      // Fetch with cache: 'no-store' to avoid bot protection issues
+      const res = await fetch(blobInfo.url, {
+        cache: "no-store",
+        headers: {
+          "User-Agent": "Vercel Edge Functions",
+        },
+      });
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -143,11 +149,20 @@ export async function writeDraft(
     };
 
     if (USE_BLOB) {
-      await put(getBlobPath(seed), JSON.stringify(data), {
-        access: "public",
-        addRandomSuffix: false,
-        contentType: "application/json",
-      });
+      try {
+        await put(getBlobPath(seed), JSON.stringify(data), {
+          access: "public",
+          addRandomSuffix: false,
+          contentType: "application/json",
+        });
+      } catch (err: any) {
+        console.error("[writeDraft] Blob put failed:", err?.message || err);
+        return {
+          ok: false,
+          version: 0,
+          error: "Blob storage error: " + (err?.message || "unknown"),
+        };
+      }
     } else {
       const shardDir = getShardDir(seed);
       ensureDir(shardDir);
