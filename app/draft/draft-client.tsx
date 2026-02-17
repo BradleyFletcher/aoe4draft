@@ -67,16 +67,16 @@ function TeamPanel({
         isActive
           ? isT1
             ? "bg-blue-950/20 ring-2 ring-blue-500/50"
-            : "bg-purple-950/20 ring-2 ring-purple-500/50"
+            : "bg-red-950/20 ring-2 ring-red-500/50"
           : "bg-card border border-border"
       }`}
     >
       <div className="flex items-center gap-2 mb-3">
         <div
-          className={`w-2 h-2 rounded-full ${isActive ? (isT1 ? "bg-blue-400 animate-pulse" : "bg-purple-400 animate-pulse") : "bg-muted-foreground/30"}`}
+          className={`w-2 h-2 rounded-full ${isActive ? (isT1 ? "bg-blue-400 animate-pulse" : "bg-red-400 animate-pulse") : "bg-muted-foreground/30"}`}
         />
         <h3
-          className={`text-sm font-semibold ${isT1 ? "text-blue-400" : "text-purple-400"}`}
+          className={`text-sm font-semibold ${isT1 ? "text-blue-400" : "text-red-400"}`}
         >
           {teamName}
         </h3>
@@ -471,7 +471,7 @@ function DraftContent() {
               myTeam === "team1"
                 ? "bg-blue-500/10 text-blue-400"
                 : myTeam === "team2"
-                  ? "bg-purple-500/10 text-purple-400"
+                  ? "bg-red-500/10 text-red-400"
                   : "bg-muted text-muted-foreground"
             }`}
           >
@@ -510,34 +510,9 @@ function DraftContent() {
               </>
             ) : isWaiting ? (
               <p className="text-sm text-muted-foreground">
-                Waiting for{" "}
-                <span
-                  className={
-                    currentStep.team === "team1"
-                      ? "text-blue-400 font-medium"
-                      : "text-purple-400 font-medium"
-                  }
-                >
-                  {actorName}
-                </span>{" "}
-                to {currentStep.action} a{" "}
-                {currentStep.target === "civ" ? "civ" : "map"}...
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                <span
-                  className={
-                    currentStep.team === "team1"
-                      ? "text-blue-400 font-medium"
-                      : "text-purple-400 font-medium"
-                  }
-                >
-                  {actorName}
-                </span>{" "}
-                {currentStep.action === "ban" ? "bans" : "picks"} a{" "}
                 {currentStep.target === "civ" ? "civ" : "map"}
               </p>
-            )}
+            ) : null}
           </div>
         )}
 
@@ -636,7 +611,7 @@ function DraftContent() {
                           </p>
                         )}
                         {isPickedT2 && (
-                          <p className="text-[10px] text-purple-400">
+                          <p className="text-[10px] text-red-400">
                             {config.team2Name}
                           </p>
                         )}
@@ -686,7 +661,7 @@ function DraftContent() {
                         </span>
                       )}
                       {isPickedT2 && (
-                        <span className="text-[10px] text-purple-400">
+                        <span className="text-[10px] text-red-400">
                           {config.team2Name}
                         </span>
                       )}

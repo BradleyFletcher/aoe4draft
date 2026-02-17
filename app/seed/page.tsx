@@ -150,17 +150,17 @@ export default function SeedPage() {
             </div>
 
             <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider text-purple-400 font-semibold mb-2">
+              <p className="text-[10px] uppercase tracking-wider text-red-400 font-semibold mb-2">
                 {draftConfig.team2Name}
               </p>
               {draftConfig.team2Players.map((player, i) => (
                 <button
                   key={`t2_${i}`}
                   onClick={() => handleRoleSelect(`team2_p${i}`)}
-                  className="w-full flex items-center justify-between p-3 rounded-lg bg-purple-500/5 hover:bg-purple-500/10 ring-1 ring-purple-500/20 hover:ring-purple-500/40 transition-all text-sm group"
+                  className="w-full flex items-center justify-between p-3 rounded-lg bg-red-500/5 hover:bg-red-500/10 ring-1 ring-red-500/20 hover:ring-red-500/40 transition-all text-sm group"
                 >
                   <span className="font-medium">{player.name}</span>
-                  <span className="text-purple-500/40 group-hover:text-purple-400 transition-colors">
+                  <span className="text-red-500/40 group-hover:text-red-400 transition-colors">
                     →
                   </span>
                 </button>

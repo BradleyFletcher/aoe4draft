@@ -296,7 +296,7 @@ export default function AdminPage() {
       links.push({
         label: team2Players[i]?.name || `Team 2 Player ${i + 1}`,
         role: `team2_p${i}`,
-        color: "purple",
+        color: "red",
         url: `${generatedUrl}&role=team2_p${i}`,
       });
     }
@@ -319,7 +319,7 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <Link
             href="/"
@@ -334,14 +334,9 @@ export default function AdminPage() {
         </div>
 
         {/* Step 1: Game Mode */}
-        <section className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
-              1
-            </span>
-            <h2 className="text-sm font-semibold">Game Mode</h2>
-          </div>
-          <div className="grid grid-cols-4 gap-2 ml-10">
+        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+          <h2 className="text-sm font-semibold mb-4">Game Mode</h2>
+          <div className="grid grid-cols-4 gap-2">
             {TEAM_SIZES.map((ts) => (
               <button
                 key={ts.value}
@@ -349,7 +344,7 @@ export default function AdminPage() {
                 className={`py-3 rounded-lg font-bold text-base transition-all ${
                   teamSize === ts.value
                     ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                    : "bg-card border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                    : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {ts.label}
@@ -359,14 +354,9 @@ export default function AdminPage() {
         </section>
 
         {/* Step 2: Names */}
-        <section className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
-              2
-            </span>
-            <h2 className="text-sm font-semibold">Players</h2>
-          </div>
-          <div className="ml-10 space-y-3">
+        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+          <h2 className="text-sm font-semibold mb-4">Players</h2>
+          <div className="space-y-3">
             <input
               type="text"
               value={tournamentName}
@@ -399,7 +389,7 @@ export default function AdminPage() {
                   type="text"
                   value={team2Name}
                   onChange={(e) => setTeam2Name(e.target.value)}
-                  className={`${inputClass} !border-purple-800/60 focus:!ring-purple-500/40 focus:!border-purple-500/60`}
+                  className={`${inputClass} !border-red-800/60 focus:!ring-red-500/40 focus:!border-red-500/60`}
                 />
                 {teamSize > 1 &&
                   team2Players.map((p, i) => (
@@ -409,7 +399,7 @@ export default function AdminPage() {
                       value={p.name}
                       onChange={(e) => updatePlayer(2, i, e.target.value)}
                       placeholder={`Player ${i + 1}`}
-                      className={`${inputClass} !border-purple-900/40 !text-xs !py-2`}
+                      className={`${inputClass} !border-red-900/40 !text-xs !py-2`}
                     />
                   ))}
               </div>
@@ -418,22 +408,19 @@ export default function AdminPage() {
         </section>
 
         {/* Step 3: Pools (collapsible) */}
-        <section className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
-              3
-            </span>
+        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Pools</h2>
             <span className="text-xs text-muted-foreground">
               All selected by default
             </span>
           </div>
-          <div className="ml-10 space-y-2">
+          <div className="space-y-2">
             {/* Civ Pool */}
-            <div className="rounded-lg bg-card border border-border overflow-hidden">
+            <div className="rounded-lg bg-secondary/30 border border-border overflow-hidden">
               <button
                 onClick={() => setShowCivPool(!showCivPool)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/50 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/30 transition-colors"
               >
                 <span className="font-medium">
                   Civilizations{" "}
@@ -483,7 +470,7 @@ export default function AdminPage() {
                         </Button>
                       ))}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
                     {filteredCivs.map((civ) => (
                       <button
                         key={civ.id}
@@ -508,10 +495,10 @@ export default function AdminPage() {
             </div>
 
             {/* Map Pool */}
-            <div className="rounded-lg bg-card border border-border overflow-hidden">
+            <div className="rounded-lg bg-secondary/30 border border-border overflow-hidden">
               <button
                 onClick={() => setShowMapPool(!showMapPool)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/50 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/30 transition-colors"
               >
                 <span className="font-medium">
                   Maps{" "}
@@ -561,7 +548,7 @@ export default function AdminPage() {
                         </Button>
                       ))}
                   </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5">
                     {filteredMaps.map((map) => (
                       <button
                         key={map.id}
@@ -579,10 +566,10 @@ export default function AdminPage() {
             </div>
 
             {/* Draft Steps (Advanced) */}
-            <div className="rounded-lg bg-card border border-border overflow-hidden">
+            <div className="rounded-lg bg-secondary/30 border border-border overflow-hidden">
               <button
                 onClick={() => setShowSteps(!showSteps)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/50 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-accent/30 transition-colors"
               >
                 <span className="font-medium">
                   Draft Order{" "}
@@ -713,14 +700,8 @@ export default function AdminPage() {
         </section>
 
         {/* Step 4: Generate */}
-        <section className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
-              4
-            </span>
-            <h2 className="text-sm font-semibold">Generate &amp; Share</h2>
-          </div>
-          <div className="ml-10">
+        <section className="mb-6">
+          <div>
             <Button
               onClick={handleGenerate}
               size="lg"
@@ -739,8 +720,8 @@ export default function AdminPage() {
 
         {/* Generated Links */}
         {generatedUrl && (
-          <section className="ml-10 mb-8 space-y-4">
-            <div className="p-4 rounded-lg bg-card border border-border space-y-4">
+          <section className="mb-8 space-y-4">
+            <div className="p-5 rounded-xl bg-card border border-border space-y-5">
               <p className="text-xs text-muted-foreground font-mono">
                 Seed: {generatedSeed}
               </p>
@@ -753,19 +734,19 @@ export default function AdminPage() {
                 },
                 {
                   label: team2Name,
-                  color: "purple" as const,
-                  links: invitationLinks.filter((l) => l.color === "purple"),
+                  color: "red" as const,
+                  links: invitationLinks.filter((l) => l.color === "red"),
                 },
               ].map((group) => (
                 <div key={group.color}>
                   <p
-                    className={`text-xs font-semibold mb-2 ${group.color === "blue" ? "text-blue-400" : "text-purple-400"}`}
+                    className={`text-xs font-semibold mb-2 ${group.color === "blue" ? "text-blue-400" : "text-red-400"}`}
                   >
                     {group.label}
                   </p>
                   <div className="space-y-1.5">
                     {group.links.map((link, i) => {
-                      const idx = group.color === "purple" ? teamSize + i : i;
+                      const idx = group.color === "red" ? teamSize + i : i;
                       return (
                         <div
                           key={link.role}
