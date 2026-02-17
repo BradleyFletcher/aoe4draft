@@ -1,5 +1,13 @@
-import { civilizations } from "@/data/civilizations";
-import { maps } from "@/data/maps";
+import { civilizations, type Civilization } from "@/data/civilizations";
+import { maps, type GameMap } from "@/data/maps";
+
+// O(1) lookup maps — built once at module load
+const civById = new Map<string, Civilization>(
+  civilizations.map((c) => [c.id, c]),
+);
+const mapById = new Map<string, GameMap>(maps.map((m) => [m.id, m]));
+const civIds = new Set(civilizations.map((c) => c.id));
+const mapIds = new Set(maps.map((m) => m.id));
 
 export type DraftActionType = "ban" | "pick";
 export type DraftActionTarget = "civ" | "map";
@@ -61,10 +69,81 @@ export function encodeDraftConfig(config: DraftConfig): string {
 
 export function decodeDraftConfig(encoded: string): DraftConfig | null {
   try {
-    return JSON.parse(atob(encoded));
+    const parsed = JSON.parse(atob(encoded));
+    return validateDraftConfig(parsed);
   } catch {
     return null;
   }
+}
+
+const VALID_TEAM_SIZES = new Set<number>([1, 2, 3, 4]);
+const MAX_STEPS = 100;
+const MAX_POOL_SIZE = 200;
+
+export function validateDraftConfig(obj: unknown): DraftConfig | null {
+  if (!obj || typeof obj !== "object") return null;
+  const c = obj as Record<string, unknown>;
+
+  if (typeof c.name !== "string" || c.name.length > 200) return null;
+  if (!VALID_TEAM_SIZES.has(c.teamSize as number)) return null;
+
+  if (!Array.isArray(c.civPool) || c.civPool.length > MAX_POOL_SIZE)
+    return null;
+  if (
+    !c.civPool.every(
+      (id: unknown) => typeof id === "string" && civIds.has(id as string),
+    )
+  )
+    return null;
+
+  if (!Array.isArray(c.mapPool) || c.mapPool.length > MAX_POOL_SIZE)
+    return null;
+  if (
+    !c.mapPool.every(
+      (id: unknown) => typeof id === "string" && mapIds.has(id as string),
+    )
+  )
+    return null;
+
+  if (
+    !Array.isArray(c.steps) ||
+    c.steps.length === 0 ||
+    c.steps.length > MAX_STEPS
+  )
+    return null;
+  const validActions = new Set(["ban", "pick"]);
+  const validTargets = new Set(["civ", "map"]);
+  const validTeams = new Set(["team1", "team2"]);
+  for (const s of c.steps as Record<string, unknown>[]) {
+    if (!validActions.has(s.action as string)) return null;
+    if (!validTargets.has(s.target as string)) return null;
+    if (!validTeams.has(s.team as string)) return null;
+    if (
+      s.playerIndex !== undefined &&
+      (typeof s.playerIndex !== "number" ||
+        s.playerIndex < 0 ||
+        s.playerIndex >= (c.teamSize as number))
+    )
+      return null;
+  }
+
+  if (typeof c.team1Name !== "string" || typeof c.team2Name !== "string")
+    return null;
+  if (!Array.isArray(c.team1Players) || !Array.isArray(c.team2Players))
+    return null;
+  if (
+    c.team1Players.length !== (c.teamSize as number) ||
+    c.team2Players.length !== (c.teamSize as number)
+  )
+    return null;
+  const validPlayer = (p: unknown) =>
+    p &&
+    typeof p === "object" &&
+    typeof (p as Record<string, unknown>).name === "string";
+  if (!c.team1Players.every(validPlayer) || !c.team2Players.every(validPlayer))
+    return null;
+
+  return c as unknown as DraftConfig;
 }
 
 export function createInitialDraftState(config: DraftConfig): DraftState {
@@ -84,6 +163,17 @@ export function getCurrentStep(state: DraftState): DraftStep | null {
 
 export function getTeamData(state: DraftState, team: TeamKey): TeamDraftData {
   return team === "team1" ? state.team1 : state.team2;
+}
+
+export function getTeamPlayers(
+  config: DraftConfig,
+  team: TeamKey,
+): TeamPlayer[] {
+  return team === "team1" ? config.team1Players : config.team2Players;
+}
+
+export function getTeamName(config: DraftConfig, team: TeamKey): string {
+  return team === "team1" ? config.team1Name : config.team2Name;
 }
 
 export function getAvailableCivs(state: DraftState): string[] {
@@ -133,7 +223,7 @@ export function applyAction(state: DraftState, itemId: string): DraftState {
   const step = getCurrentStep(state);
   if (!step) return state;
 
-  const newState = JSON.parse(JSON.stringify(state)) as DraftState;
+  const newState = structuredClone(state);
   const teamData = step.team === "team1" ? newState.team1 : newState.team2;
 
   if (step.target === "civ") {
@@ -159,25 +249,23 @@ export function applyAction(state: DraftState, itemId: string): DraftState {
 }
 
 export function getCivName(id: string): string {
-  return civilizations.find((c) => c.id === id)?.name ?? id;
+  return civById.get(id)?.name ?? id;
 }
 
 export function getCivFlag(id: string): string | undefined {
-  return civilizations.find((c) => c.id === id)?.flag;
+  return civById.get(id)?.flag;
 }
 
 export function getMapName(id: string): string {
-  return maps.find((m) => m.id === id)?.name ?? id;
+  return mapById.get(id)?.name ?? id;
 }
 
 export function getStepActorName(config: DraftConfig, step: DraftStep): string {
-  const team =
-    step.team === "team1" ? config.team1Players : config.team2Players;
-  const teamName = step.team === "team1" ? config.team1Name : config.team2Name;
-  if (step.playerIndex !== undefined && step.playerIndex < team.length) {
-    return team[step.playerIndex].name;
+  const players = getTeamPlayers(config, step.team);
+  if (step.playerIndex !== undefined && step.playerIndex < players.length) {
+    return players[step.playerIndex].name;
   }
-  return teamName;
+  return getTeamName(config, step.team);
 }
 
 export function getStepActorLabel(
@@ -196,44 +284,6 @@ export function getTeamFromRole(role: string): TeamKey | null {
   if (role.startsWith("team1")) return "team1";
   if (role.startsWith("team2")) return "team2";
   return null;
-}
-
-export function generateStepsForTeamSize(teamSize: TeamSize): DraftStep[] {
-  const steps: DraftStep[] = [];
-
-  // Civ bans: 3 per team for 1v1, 2 per team for team games
-  const civBansPerTeam = teamSize === 1 ? 3 : 2;
-  for (let i = 0; i < civBansPerTeam; i++) {
-    steps.push({ action: "ban", target: "civ", team: "team1" });
-    steps.push({ action: "ban", target: "civ", team: "team2" });
-  }
-
-  // Civ picks: one per player on each team
-  for (let p = 0; p < teamSize; p++) {
-    steps.push({
-      action: "pick",
-      target: "civ",
-      team: "team1",
-      playerIndex: p,
-    });
-    steps.push({
-      action: "pick",
-      target: "civ",
-      team: "team2",
-      playerIndex: p,
-    });
-  }
-
-  // Map bans: 2 per team
-  for (let i = 0; i < 2; i++) {
-    steps.push({ action: "ban", target: "map", team: "team1" });
-    steps.push({ action: "ban", target: "map", team: "team2" });
-  }
-
-  // Map pick: 1
-  steps.push({ action: "pick", target: "map", team: "team1" });
-
-  return steps;
 }
 
 export interface PresetDraftFormat {

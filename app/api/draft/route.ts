@@ -6,14 +6,25 @@ import {
   isValidSeed,
   cleanupOldDrafts,
 } from "@/lib/storage";
+import { validateDraftConfig } from "@/lib/draft";
 
-// Simple in-memory rate limiter: max 60 requests per minute per IP
+// Simple in-memory rate limiter: max 120 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 120;
 const RATE_WINDOW_MS = 60 * 1000;
+let lastRateLimitPrune = 0;
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
+
+  // Prune stale entries every 5 minutes to prevent unbounded growth
+  if (now - lastRateLimitPrune > 5 * 60 * 1000) {
+    lastRateLimitPrune = now;
+    for (const [key, entry] of rateLimitMap) {
+      if (now > entry.resetAt) rateLimitMap.delete(key);
+    }
+  }
+
   const entry = rateLimitMap.get(ip);
 
   if (!entry || now > entry.resetAt) {
@@ -37,17 +48,13 @@ function getClientIp(req: NextRequest): string {
   );
 }
 
-// Periodic cleanup (runs at most once per hour)
+// Periodic cleanup (runs at most once per hour, fire-and-forget)
 let lastCleanup = 0;
 function maybeCleanup() {
   const now = Date.now();
   if (now - lastCleanup > 60 * 60 * 1000) {
     lastCleanup = now;
-    try {
-      cleanupOldDrafts();
-    } catch {
-      /* ignore */
-    }
+    cleanupOldDrafts().catch(() => {});
   }
 }
 
@@ -65,7 +72,7 @@ export async function GET(req: NextRequest) {
 
   maybeCleanup();
 
-  const data = readDraft(seed);
+  const data = await readDraft(seed);
   if (!data) {
     return NextResponse.json({ exists: false });
   }
@@ -94,11 +101,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid seed" }, { status: 400 });
     }
 
-    if (!state) {
+    if (!state || typeof state !== "object" || !state.config) {
       return NextResponse.json({ error: "Missing state" }, { status: 400 });
     }
 
-    const result = writeDraft(seed, state, history ?? []);
+    // Validate the embedded config to prevent injection of arbitrary data
+    if (!validateDraftConfig(state.config)) {
+      return NextResponse.json(
+        { error: "Invalid draft config" },
+        { status: 400 },
+      );
+    }
+
+    const result = await writeDraft(seed, state, history ?? []);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -124,6 +139,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Invalid seed" }, { status: 400 });
   }
 
-  deleteDraft(seed);
+  await deleteDraft(seed);
   return NextResponse.json({ ok: true });
 }

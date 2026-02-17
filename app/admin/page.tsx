@@ -10,7 +10,6 @@ import {
   type TeamSize,
   type TeamPlayer,
   generateSeed,
-  generateStepsForTeamSize,
   PRESET_DRAFT_FORMATS,
 } from "@/lib/draft";
 import {
@@ -60,16 +59,26 @@ export default function AdminPage() {
     PRESET_DRAFT_FORMATS["bans"].generate(1),
   );
   const [generatedSeed, setGeneratedSeed] = useState<string | null>(() => {
-    if (typeof window !== "undefined")
-      return sessionStorage.getItem("draft_seed");
+    try {
+      if (typeof window !== "undefined")
+        return sessionStorage.getItem("draft_seed");
+    } catch {
+      /* storage unavailable */
+    }
     return null;
   });
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(() => {
-    if (typeof window !== "undefined")
-      return sessionStorage.getItem("draft_url");
+    try {
+      if (typeof window !== "undefined")
+        return sessionStorage.getItem("draft_url");
+    } catch {
+      /* storage unavailable */
+    }
     return null;
   });
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [civFilter, setCivFilter] = useState<string>("all");
   const [mapFilter, setMapFilter] = useState<string>("all");
 
@@ -81,23 +90,24 @@ export default function AdminPage() {
       setTeam1Name("Team 1");
       setTeam2Name("Team 2");
     }
-    setSteps(generateStepsForTeamSize(size));
+    setSteps(PRESET_DRAFT_FORMATS["bans"].generate(size));
     setGeneratedUrl(null);
     setGeneratedSeed(null);
-    sessionStorage.removeItem("draft_seed");
-    sessionStorage.removeItem("draft_url");
+    setGenerateError(null);
+    try {
+      sessionStorage.removeItem("draft_seed");
+      sessionStorage.removeItem("draft_url");
+    } catch {
+      /* storage unavailable */
+    }
   };
 
-  const updateTeam1Player = (index: number, name: string) => {
-    const next = [...team1Players];
+  const updatePlayer = (team: 1 | 2, index: number, name: string) => {
+    const setter = team === 1 ? setTeam1Players : setTeam2Players;
+    const players = team === 1 ? team1Players : team2Players;
+    const next = [...players];
     next[index] = { name };
-    setTeam1Players(next);
-  };
-
-  const updateTeam2Player = (index: number, name: string) => {
-    const next = [...team2Players];
-    next[index] = { name };
-    setTeam2Players(next);
+    setter(next);
   };
 
   const civExpansions = useMemo(() => {
@@ -137,29 +147,9 @@ export default function AdminPage() {
   const selectAllCivs = () =>
     setSelectedCivs(new Set(civilizations.map((c) => c.id)));
   const deselectAllCivs = () => setSelectedCivs(new Set());
-  const selectFilteredCivs = () => {
-    const next = new Set(selectedCivs);
-    filteredCivs.forEach((c) => next.add(c.id));
-    setSelectedCivs(next);
-  };
-  const deselectFilteredCivs = () => {
-    const next = new Set(selectedCivs);
-    filteredCivs.forEach((c) => next.delete(c.id));
-    setSelectedCivs(next);
-  };
 
   const selectAllMaps = () => setSelectedMaps(new Set(maps.map((m) => m.id)));
   const deselectAllMaps = () => setSelectedMaps(new Set());
-  const selectFilteredMaps = () => {
-    const next = new Set(selectedMaps);
-    filteredMaps.forEach((m) => next.add(m.id));
-    setSelectedMaps(next);
-  };
-  const deselectFilteredMaps = () => {
-    const next = new Set(selectedMaps);
-    filteredMaps.forEach((m) => next.delete(m.id));
-    setSelectedMaps(next);
-  };
 
   const addStep = () => {
     setSteps([...steps, { action: "ban", target: "civ", team: "team1" }]);
@@ -195,8 +185,13 @@ export default function AdminPage() {
       setSteps(preset.generate(teamSize));
       setGeneratedUrl(null);
       setGeneratedSeed(null);
-      sessionStorage.removeItem("draft_seed");
-      sessionStorage.removeItem("draft_url");
+      setGenerateError(null);
+      try {
+        sessionStorage.removeItem("draft_seed");
+        sessionStorage.removeItem("draft_url");
+      } catch {
+        /* storage unavailable */
+      }
     }
   };
 
@@ -206,51 +201,85 @@ export default function AdminPage() {
       selectedMaps.size === 0 ||
       steps.length === 0
     ) {
-      alert(
+      setGenerateError(
         "Please select at least one civilization, one map, and one draft step.",
       );
       return;
     }
 
-    const seed = generateSeed();
-    const config: DraftConfig = {
-      name: tournamentName,
-      teamSize,
-      civPool: Array.from(selectedCivs),
-      mapPool: Array.from(selectedMaps),
-      steps,
-      team1Name,
-      team2Name,
-      team1Players,
-      team2Players,
-    };
+    setIsGenerating(true);
+    setGenerateError(null);
 
-    // Save initial state to server so URLs only need the seed
-    const initialState = {
-      config,
-      currentStepIndex: 0,
-      team1: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
-      team2: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
-      completed: false,
-    };
-    await fetch("/api/draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seed, state: initialState, history: [] }),
-    });
+    try {
+      const seed = generateSeed();
+      const config: DraftConfig = {
+        name: tournamentName,
+        teamSize,
+        civPool: Array.from(selectedCivs),
+        mapPool: Array.from(selectedMaps),
+        steps,
+        team1Name,
+        team2Name,
+        team1Players,
+        team2Players,
+      };
 
-    const url = `${window.location.origin}/draft?seed=${seed}`;
+      // Save initial state to server so URLs only need the seed
+      const initialState = {
+        config,
+        currentStepIndex: 0,
+        team1: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
+        team2: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
+        completed: false,
+      };
+      const res = await fetch("/api/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seed, state: initialState, history: [] }),
+      });
 
-    setGeneratedSeed(seed);
-    setGeneratedUrl(url);
-    sessionStorage.setItem("draft_seed", seed);
-    sessionStorage.setItem("draft_url", url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setGenerateError(
+          data.error || "Failed to save draft to server. Please try again.",
+        );
+        return;
+      }
+
+      const data = await res.json();
+      if (!data.ok) {
+        setGenerateError("Failed to save draft to server. Please try again.");
+        return;
+      }
+
+      const url = `${window.location.origin}/draft?seed=${seed}`;
+
+      setGeneratedSeed(seed);
+      setGeneratedUrl(url);
+      try {
+        sessionStorage.setItem("draft_seed", seed);
+        sessionStorage.setItem("draft_url", url);
+      } catch {
+        /* storage unavailable */
+      }
+    } catch {
+      setGenerateError(
+        "Network error. Please check your connection and try again.",
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  const handleCopy = (text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
+  const handleCopy = async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    } catch {
+      // Fallback: select the text in the input for manual copy
+      setCopiedIndex(null);
+    }
   };
 
   // Build invitation links for each player slot
@@ -284,43 +313,6 @@ export default function AdminPage() {
 
     return links;
   }, [generatedUrl, teamSize, team1Players, team2Players]);
-
-  const stepSummary = useMemo(() => {
-    const t1CivBans = steps.filter(
-      (s) => s.team === "team1" && s.action === "ban" && s.target === "civ",
-    ).length;
-    const t2CivBans = steps.filter(
-      (s) => s.team === "team2" && s.action === "ban" && s.target === "civ",
-    ).length;
-    const t1CivPicks = steps.filter(
-      (s) => s.team === "team1" && s.action === "pick" && s.target === "civ",
-    ).length;
-    const t2CivPicks = steps.filter(
-      (s) => s.team === "team2" && s.action === "pick" && s.target === "civ",
-    ).length;
-    const t1MapBans = steps.filter(
-      (s) => s.team === "team1" && s.action === "ban" && s.target === "map",
-    ).length;
-    const t2MapBans = steps.filter(
-      (s) => s.team === "team2" && s.action === "ban" && s.target === "map",
-    ).length;
-    const t1MapPicks = steps.filter(
-      (s) => s.team === "team1" && s.action === "pick" && s.target === "map",
-    ).length;
-    const t2MapPicks = steps.filter(
-      (s) => s.team === "team2" && s.action === "pick" && s.target === "map",
-    ).length;
-    return {
-      t1CivBans,
-      t2CivBans,
-      t1CivPicks,
-      t2CivPicks,
-      t1MapBans,
-      t2MapBans,
-      t1MapPicks,
-      t2MapPicks,
-    };
-  }, [steps]);
 
   const [showCivPool, setShowCivPool] = useState(false);
   const [showMapPool, setShowMapPool] = useState(false);
@@ -400,7 +392,7 @@ export default function AdminPage() {
                       key={i}
                       type="text"
                       value={p.name}
-                      onChange={(e) => updateTeam1Player(i, e.target.value)}
+                      onChange={(e) => updatePlayer(1, i, e.target.value)}
                       placeholder={`Player ${i + 1}`}
                       className={`${inputClass} !border-blue-900/40 !text-xs !py-2`}
                     />
@@ -419,7 +411,7 @@ export default function AdminPage() {
                       key={i}
                       type="text"
                       value={p.name}
-                      onChange={(e) => updateTeam2Player(i, e.target.value)}
+                      onChange={(e) => updatePlayer(2, i, e.target.value)}
                       placeholder={`Player ${i + 1}`}
                       className={`${inputClass} !border-purple-900/40 !text-xs !py-2`}
                     />
@@ -736,10 +728,16 @@ export default function AdminPage() {
             <Button
               onClick={handleGenerate}
               size="lg"
+              disabled={isGenerating}
               className="w-full h-12 text-sm font-semibold shadow-lg shadow-primary/20"
             >
-              Generate Draft Links
+              {isGenerating ? "Generating..." : "Generate Draft Links"}
             </Button>
+            {generateError && (
+              <p className="text-xs text-red-400 mt-2 text-center">
+                {generateError}
+              </p>
+            )}
           </div>
         </section>
 
