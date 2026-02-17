@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { civilizations } from "@/data/civilizations";
 import { maps } from "@/data/maps";
@@ -58,24 +58,20 @@ export default function AdminPage() {
   const [steps, setSteps] = useState<DraftStep[]>(
     PRESET_DRAFT_FORMATS["bans"].generate(1),
   );
-  const [generatedSeed, setGeneratedSeed] = useState<string | null>(() => {
+  const [generatedSeed, setGeneratedSeed] = useState<string | null>(null);
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+
+  // Hydrate from sessionStorage after mount to avoid SSR/client mismatch
+  useEffect(() => {
     try {
-      if (typeof window !== "undefined")
-        return sessionStorage.getItem("draft_seed");
+      const seed = sessionStorage.getItem("draft_seed");
+      const url = sessionStorage.getItem("draft_url");
+      if (seed) setGeneratedSeed(seed);
+      if (url) setGeneratedUrl(url);
     } catch {
       /* storage unavailable */
     }
-    return null;
-  });
-  const [generatedUrl, setGeneratedUrl] = useState<string | null>(() => {
-    try {
-      if (typeof window !== "undefined")
-        return sessionStorage.getItem("draft_url");
-    } catch {
-      /* storage unavailable */
-    }
-    return null;
-  });
+  }, []);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
