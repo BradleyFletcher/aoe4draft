@@ -333,7 +333,7 @@ function DraftContent() {
         setDraftState(saved.state);
         setHistory(saved.history ?? []);
       }
-    }, 2000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [seed, draftState?.completed]);
 
@@ -510,7 +510,9 @@ function DraftContent() {
               </>
             ) : isWaiting ? (
               <p className="text-sm text-muted-foreground">
-                {currentStep.target === "civ" ? "civ" : "map"}
+                Waiting for {getStepActorName(draftState.config, currentStep)}{" "}
+                to {currentStep.action} a{" "}
+                {currentStep.target === "civ" ? "civilization" : "map"}
               </p>
             ) : null}
           </div>
