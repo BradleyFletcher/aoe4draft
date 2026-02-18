@@ -371,7 +371,6 @@ function DraftContent() {
     return true;
   })();
 
-  const isWaiting = role !== "spectator" && currentStep && !isMyTurn;
   const canInteract = role !== "spectator" && isMyTurn;
 
   const myDisplayName = (() => {
@@ -441,39 +440,34 @@ function DraftContent() {
                 {config.name}
               </h1>
               <p className="text-[11px] text-muted-foreground">
-                {config.teamSize}v{config.teamSize} &middot; Step{" "}
-                {Math.min(draftState.currentStepIndex + 1, config.steps.length)}
-                /{config.steps.length} &middot;{" "}
-                <span className="font-mono">{seed}</span>
+                {config.teamSize}v{config.teamSize}
               </p>
             </div>
           </div>
           <span
             className={`text-[11px] px-2.5 py-1 rounded-md font-medium ${
               myTeam === "team1"
-                ? "bg-blue-500/10 text-blue-400"
+                ? "bg-blue-500/10 text-blue-300"
                 : myTeam === "team2"
-                  ? "bg-red-500/10 text-red-400"
-                  : "bg-muted text-muted-foreground"
+                  ? "bg-red-500/10 text-red-300"
+                  : "bg-secondary text-muted-foreground"
             }`}
           >
             {myDisplayName}
           </span>
         </div>
 
-        {/* Progress bar */}
-        <div className="w-full bg-secondary rounded-full h-1 mb-4">
-          <div
-            className="bg-primary h-1 rounded-full transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        {/* Draft Timeline — visible to all */}
-        <div className="mb-5 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-3">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">
-            Draft Timeline
-          </p>
+        {/* Timeline + Progress */}
+        <div className="mb-5 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold">
+              Timeline
+            </p>
+            <p className="text-[10px] text-muted-foreground/40 font-medium">
+              {Math.min(draftState.currentStepIndex + 1, config.steps.length)}/
+              {config.steps.length}
+            </p>
+          </div>
           <DraftTimeline state={draftState} />
         </div>
 
@@ -482,19 +476,18 @@ function DraftContent() {
           <div
             className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in ${
               currentStep.auto
-                ? "bg-yellow-500/10 ring-1 ring-yellow-500/30"
+                ? "bg-card border border-yellow-500/20"
                 : isMyTurn
                   ? currentStep.action === "ban"
-                    ? "bg-red-500/10 ring-1 ring-red-500/30 animate-draft-glow-red"
-                    : "bg-green-500/10 ring-1 ring-green-500/30 animate-draft-glow-green"
+                    ? "bg-card border border-red-500/25"
+                    : "bg-card border border-green-500/25"
                   : "bg-card border border-border"
             }`}
           >
             {currentStep.auto ? (
               <p className="text-sm font-semibold text-yellow-400 animate-pulse">
                 Randomising{" "}
-                {currentStep.target === "civ" ? "civilization" : "map"} from
-                pool...
+                {currentStep.target === "civ" ? "civilization" : "map"}...
               </p>
             ) : isMyTurn ? (
               <>
@@ -506,7 +499,7 @@ function DraftContent() {
                   Your turn — select from below
                 </p>
               </>
-            ) : isWaiting ? (
+            ) : (
               <p className="text-sm text-muted-foreground">
                 Waiting for{" "}
                 <span
@@ -517,22 +510,12 @@ function DraftContent() {
                 to {currentStep.action} a{" "}
                 {currentStep.target === "civ" ? "civilization" : "map"}...
               </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                <span
-                  className={`font-semibold ${currentStep.team === "team1" ? "text-blue-400" : "text-red-400"}`}
-                >
-                  {getStepActorName(draftState.config, currentStep)}
-                </span>{" "}
-                is {currentStep.action === "ban" ? "banning" : "picking"} a{" "}
-                {currentStep.target === "civ" ? "civilization" : "map"}...
-              </p>
             )}
           </div>
         )}
 
         {draftState.completed && (
-          <div className="mb-5 rounded-xl px-5 py-4 bg-green-500/10 ring-1 ring-green-500/30 text-center">
+          <div className="mb-5 rounded-xl px-5 py-4 bg-card border border-green-500/20 text-center">
             <p className="text-sm font-semibold text-green-400 flex items-center justify-center gap-2">
               <CheckCircle2 className="w-4 h-4" /> Draft Complete
             </p>
@@ -540,7 +523,7 @@ function DraftContent() {
         )}
 
         {saveError && (
-          <div className="mb-4 rounded-lg px-4 py-2.5 bg-red-500/10 ring-1 ring-red-500/30 text-center">
+          <div className="mb-4 rounded-lg px-4 py-2.5 bg-card border border-red-500/20 text-center">
             <p className="text-xs text-red-400">{saveError}</p>
           </div>
         )}
@@ -554,6 +537,11 @@ function DraftContent() {
             isActive={!draftState.completed && currentStep?.team === "team1"}
             isMyTeam={myTeam === "team1"}
             myPlayerIndex={myTeam === "team1" ? myPlayerIndex : null}
+            activePlayerIndex={
+              !draftState.completed && currentStep?.team === "team1"
+                ? (currentStep?.playerIndex ?? null)
+                : null
+            }
             teamData={draftState.team1}
             config={config}
           />
@@ -607,7 +595,7 @@ function DraftContent() {
               const isPending = !hasAutoResult && !draftState.completed;
 
               return (
-                <div className="w-full rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-3 text-center">
+                <div className="w-full rounded-xl bg-card border border-border/50 p-3 text-center">
                   <div className="flex items-center justify-center gap-1.5 mb-2">
                     <Dice5 className="w-3.5 h-3.5 text-yellow-400" />
                     <span className="text-[9px] uppercase tracking-widest text-muted-foreground/50 font-semibold">
@@ -623,10 +611,10 @@ function DraftContent() {
                           key={i}
                           className={`w-full px-3 py-2 rounded-lg text-xs font-bold transition-all ${
                             filled
-                              ? "bg-yellow-500/10 ring-1 ring-yellow-500/30 text-yellow-400 animate-draft-reveal"
+                              ? "bg-yellow-500/5 ring-1 ring-yellow-500/20 text-yellow-400 animate-draft-reveal"
                               : isPending
-                                ? "ring-1 ring-yellow-500/15 text-yellow-400/30 animate-pulse"
-                                : "ring-1 ring-border/20 text-muted-foreground/25"
+                                ? "ring-1 ring-yellow-500/10 text-yellow-400/30 animate-pulse"
+                                : "ring-1 ring-border/15 text-muted-foreground/25"
                           }`}
                         >
                           {filled ? getMapName(mapId) : "?"}
@@ -646,20 +634,21 @@ function DraftContent() {
             isActive={!draftState.completed && currentStep?.team === "team2"}
             isMyTeam={myTeam === "team2"}
             myPlayerIndex={myTeam === "team2" ? myPlayerIndex : null}
+            activePlayerIndex={
+              !draftState.completed && currentStep?.team === "team2"
+                ? (currentStep?.playerIndex ?? null)
+                : null
+            }
             teamData={draftState.team2}
             config={config}
           />
         </div>
 
-        {/* Selection Area */}
-        {!draftState.completed && currentStep && (
-          <div
-            className={`transition-opacity duration-300 ${!canInteract ? "opacity-30 pointer-events-none" : ""}`}
-          >
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-3">
-              {currentStep.action === "ban"
-                ? "Select to Ban"
-                : "Select to Pick"}
+        {/* Selection Area — only shown when it's your turn */}
+        {!draftState.completed && currentStep && canInteract && (
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
+              {currentStep.target === "civ" ? "Civilizations" : "Maps"}
             </p>
             {currentStep.target === "civ" ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
@@ -684,48 +673,37 @@ function DraftContent() {
                       className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
                         clickable
                           ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 hover:scale-[1.03] cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 hover:scale-[1.03] cursor-pointer"
+                            ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                            : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
                           : isBanned
-                            ? "opacity-15"
+                            ? "bg-card/40 ring-1 ring-red-500/10"
                             : isPickedT1 || isPickedT2
-                              ? "opacity-25"
-                              : "opacity-15"
+                              ? "bg-card/40 ring-1 ring-border/30"
+                              : "bg-card/30 ring-1 ring-border/20"
                       }`}
                     >
                       {civFlag && (
                         <Image
                           src={civFlag}
                           alt={civName}
-                          width={48}
-                          height={48}
+                          width={96}
+                          height={96}
                           className={`w-12 h-12 rounded-full object-cover shrink-0 ${
                             isBanned
-                              ? "grayscale ring-2 ring-red-500/30"
-                              : "ring-2 ring-border"
+                              ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                              : isPickedT1 || isPickedT2
+                                ? "opacity-50 ring-2 ring-border/50"
+                                : !clickable
+                                  ? "opacity-30 ring-2 ring-border/30"
+                                  : "ring-2 ring-border"
                           }`}
                         />
                       )}
-                      <div className="min-w-0 w-full">
-                        <p className="text-xs font-medium truncate">
-                          {civName}
-                        </p>
-                        {isBanned && (
-                          <p className="text-[10px] text-red-400 font-medium">
-                            Banned
-                          </p>
-                        )}
-                        {isPickedT1 && (
-                          <p className="text-[10px] text-blue-400">
-                            {config.team1Name}
-                          </p>
-                        )}
-                        {isPickedT2 && (
-                          <p className="text-[10px] text-red-400">
-                            {config.team2Name}
-                          </p>
-                        )}
-                      </div>
+                      <p
+                        className={`text-xs font-medium truncate w-full ${isBanned ? "text-muted-foreground/40" : ""}`}
+                      >
+                        {civName}
+                      </p>
                     </button>
                   );
                 })}
@@ -751,33 +729,20 @@ function DraftContent() {
                       className={`p-3 rounded-xl text-left transition-all ${
                         clickable
                           ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 hover:scale-[1.03] cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 hover:scale-[1.03] cursor-pointer"
+                            ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                            : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
                           : isBanned
-                            ? "opacity-15"
+                            ? "bg-card/40 ring-1 ring-red-500/10"
                             : isPickedT1 || isPickedT2
-                              ? "opacity-25"
-                              : "opacity-15"
+                              ? "bg-card/40 ring-1 ring-border/30"
+                              : "bg-card/30 ring-1 ring-border/20"
                       }`}
                     >
-                      <span className="text-xs font-medium truncate block">
+                      <span
+                        className={`text-xs font-medium truncate block ${isBanned ? "text-muted-foreground/40" : ""}`}
+                      >
                         {mapName}
                       </span>
-                      {isBanned && (
-                        <span className="text-[10px] text-red-400 font-medium">
-                          Banned
-                        </span>
-                      )}
-                      {isPickedT1 && (
-                        <span className="text-[10px] text-blue-400">
-                          {config.team1Name}
-                        </span>
-                      )}
-                      {isPickedT2 && (
-                        <span className="text-[10px] text-red-400">
-                          {config.team2Name}
-                        </span>
-                      )}
                     </button>
                   );
                 })}
@@ -788,9 +753,9 @@ function DraftContent() {
 
         {/* Controls — hidden for spectators */}
         {/* Footer with seed */}
-        <div className="mt-8 pt-4 border-t border-border/40 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/50">
+        <div className="mt-8 pt-4 border-t border-border/30 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/40">
           <span>Seed:</span>
-          <code className="font-mono bg-secondary/40 px-1.5 py-0.5 rounded text-muted-foreground/70 select-all">
+          <code className="font-mono bg-secondary/30 px-1.5 py-0.5 rounded text-muted-foreground/50 select-all">
             {seed}
           </code>
         </div>

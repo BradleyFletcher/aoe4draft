@@ -93,7 +93,7 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="p-4 rounded-xl bg-card/80 backdrop-blur-sm ring-1 ring-border/50 hover:ring-border transition-colors">
+    <div className="p-4 rounded-xl bg-card ring-1 ring-border/50 hover:ring-border transition-colors">
       <div className="flex items-center gap-2.5 mb-2">
         {icon}
         <h3 className="text-sm font-semibold">{title}</h3>

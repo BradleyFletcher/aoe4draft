@@ -43,6 +43,7 @@ export default function AdminPage() {
   const [tournamentName, setTournamentName] = useState("AOE4 Tournament Draft");
   const [teamSize, setTeamSize] = useState<TeamSize>(1);
   const [banMode, setBanMode] = useState<BanMode>("global");
+  const [allowDuplicatePicks, setAllowDuplicatePicks] = useState(false);
   const [randomOddMap, setRandomOddMap] = useState(true);
   const [team1Name, setTeam1Name] = useState("Team 1");
   const [team2Name, setTeam2Name] = useState("Team 2");
@@ -231,6 +232,7 @@ export default function AdminPage() {
         name: tournamentName,
         teamSize,
         banMode,
+        allowDuplicatePicks: teamSize > 1 ? allowDuplicatePicks : false,
         civPool: Array.from(selectedCivs),
         mapPool: Array.from(selectedMaps),
         steps: finalSteps,
@@ -354,7 +356,7 @@ export default function AdminPage() {
         </div>
 
         {/* Step 1: Game Mode */}
-        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
+        <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
           <h2 className="text-sm font-semibold mb-4">Game Mode</h2>
           <div className="grid grid-cols-4 gap-2 mb-4">
             {TEAM_SIZES.map((ts) => (
@@ -435,10 +437,46 @@ export default function AdminPage() {
               </span>
             </button>
           </div>
+
+          {teamSize > 1 && (
+            <>
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2 mt-4">
+                Duplicate Civ Picks
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setAllowDuplicatePicks(false)}
+                  className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                    !allowDuplicatePicks
+                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                      : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className="font-semibold block">Unique</span>
+                  <span className="text-[11px] opacity-70">
+                    Each civ can only be picked once per team
+                  </span>
+                </button>
+                <button
+                  onClick={() => setAllowDuplicatePicks(true)}
+                  className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                    allowDuplicatePicks
+                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                      : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className="font-semibold block">Allow Duplicates</span>
+                  <span className="text-[11px] opacity-70">
+                    Teammates can pick the same civ
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
         {/* Step 2: Names */}
-        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
+        <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
           <h2 className="text-sm font-semibold mb-4">Players</h2>
           <div className="space-y-3">
             <input
@@ -492,7 +530,7 @@ export default function AdminPage() {
         </section>
 
         {/* Step 3: Pools (collapsible) */}
-        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
+        <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Pools</h2>
             <span className="text-xs text-muted-foreground">
@@ -805,7 +843,7 @@ export default function AdminPage() {
         {/* Generated Links */}
         {generatedUrl && (
           <section className="mb-8 space-y-4">
-            <div className="p-5 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 space-y-5">
+            <div className="p-5 rounded-xl bg-card border border-border/50 space-y-5">
               <p className="text-xs text-muted-foreground font-mono">
                 Seed: {generatedSeed}
               </p>

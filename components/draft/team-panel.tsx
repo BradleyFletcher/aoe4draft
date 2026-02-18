@@ -18,6 +18,7 @@ interface TeamPanelProps {
   isActive: boolean;
   isMyTeam: boolean;
   myPlayerIndex: number | null;
+  activePlayerIndex: number | null;
   teamData: TeamDraftData;
   config: DraftConfig;
 }
@@ -29,6 +30,7 @@ export default function TeamPanel({
   isActive,
   isMyTeam,
   myPlayerIndex,
+  activePlayerIndex,
   teamData,
   config,
 }: TeamPanelProps) {
@@ -85,9 +87,9 @@ export default function TeamPanel({
       className={`rounded-xl p-4 transition-all ${
         isActive
           ? isT1
-            ? "bg-blue-950/20 ring-2 ring-blue-500/50 animate-draft-glow-blue"
-            : "bg-red-950/20 ring-2 ring-red-500/50 animate-draft-glow-red"
-          : "bg-card/80 backdrop-blur-sm border border-border/50"
+            ? "bg-card border border-blue-500/30"
+            : "bg-card border border-red-500/30"
+          : "bg-card border border-border/50"
       }`}
     >
       {/* Header */}
@@ -121,16 +123,21 @@ export default function TeamPanel({
           const civs = playerCivs.get(pIdx) ?? [];
           const expected = playerExpectedPicks.get(pIdx) ?? 1;
           const isMe = isMyTeam && myPlayerIndex === pIdx;
+          const isActivePlayer = activePlayerIndex === pIdx;
 
           return (
             <div
               key={pIdx}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                isMe
+                isActivePlayer
                   ? isT1
-                    ? "ring-1 ring-blue-500/30 bg-blue-500/5"
-                    : "ring-1 ring-red-500/30 bg-red-500/5"
-                  : "ring-1 ring-border/15"
+                    ? "ring-1 ring-blue-400/40 bg-blue-500/8 animate-pulse"
+                    : "ring-1 ring-red-400/40 bg-red-500/8 animate-pulse"
+                  : isMe
+                    ? isT1
+                      ? "ring-1 ring-blue-500/20 bg-blue-500/5"
+                      : "ring-1 ring-red-500/20 bg-red-500/5"
+                    : "ring-1 ring-border/10"
               }`}
             >
               {/* Civ flag(s) or placeholder */}
@@ -143,8 +150,8 @@ export default function TeamPanel({
                           key={ci}
                           src={flag}
                           alt={getCivName(civId)}
-                          width={44}
-                          height={44}
+                          width={88}
+                          height={88}
                           className={`w-11 h-11 rounded-full object-cover ring-2 ring-background animate-draft-reveal ${
                             ci > 0 ? "" : ""
                           }`}
@@ -212,9 +219,9 @@ export default function TeamPanel({
                   className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                     filled
                       ? isT1
-                        ? "bg-blue-500/8 ring-1 ring-blue-500/20 animate-draft-reveal"
-                        : "bg-red-500/8 ring-1 ring-red-500/20 animate-draft-reveal"
-                      : "ring-1 ring-border/20 text-muted-foreground/25"
+                        ? "bg-blue-500/5 ring-1 ring-blue-500/15 animate-draft-reveal"
+                        : "bg-red-500/5 ring-1 ring-red-500/15 animate-draft-reveal"
+                      : "ring-1 ring-border/15 text-muted-foreground/25"
                   }`}
                 >
                   {filled ? getMapName(id) : "—"}
@@ -250,16 +257,16 @@ export default function TeamPanel({
                   key={i}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${
                     filled
-                      ? "bg-red-500/8 ring-1 ring-red-500/20 animate-draft-ban"
-                      : "ring-1 ring-border/15"
+                      ? "bg-red-500/5 ring-1 ring-red-500/15 animate-draft-ban"
+                      : "ring-1 ring-border/10"
                   }`}
                 >
                   {filled && flag ? (
                     <Image
                       src={flag}
                       alt={name ?? ""}
-                      width={18}
-                      height={18}
+                      width={48}
+                      height={48}
                       className="w-[18px] h-[18px] rounded-full object-cover shrink-0 grayscale opacity-40"
                     />
                   ) : !filled ? (

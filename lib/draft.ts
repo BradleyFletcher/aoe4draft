@@ -31,6 +31,7 @@ export interface DraftConfig {
   name: string;
   teamSize: TeamSize;
   banMode: BanMode;
+  allowDuplicatePicks: boolean;
   civPool: string[];
   mapPool: string[];
   steps: DraftStep[];
@@ -92,6 +93,9 @@ export function validateDraftConfig(obj: unknown): DraftConfig | null {
   // Default banMode to "global" for backwards compatibility
   if (c.banMode === undefined) c.banMode = "global";
   if (c.banMode !== "global" && c.banMode !== "per-team") return null;
+  // Default allowDuplicatePicks to false for backwards compatibility
+  if (c.allowDuplicatePicks === undefined) c.allowDuplicatePicks = false;
+  if (typeof c.allowDuplicatePicks !== "boolean") return null;
 
   if (!Array.isArray(c.civPool) || c.civPool.length > MAX_POOL_SIZE)
     return null;
@@ -204,9 +208,12 @@ export function getAvailableCivs(state: DraftState): string[] {
   // When picking:
   // Global mode: all bans from both teams are excluded for everyone
   // Per-team mode: only the OTHER team's bans affect you (your own bans don't restrict you)
-  const myPicks = step
-    ? new Set(getTeamData(state, step.team).civPicks)
-    : new Set<string>();
+  // allowDuplicatePicks: teammates can pick the same civ
+  const allowDupes = state.config.allowDuplicatePicks;
+  const myPicks =
+    step && !allowDupes
+      ? new Set(getTeamData(state, step.team).civPicks)
+      : new Set<string>();
 
   if (isPerTeam && step) {
     const otherTeam = step.team === "team1" ? "team2" : "team1";
