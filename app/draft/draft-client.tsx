@@ -61,6 +61,8 @@ function TeamPanel({
     )
     .map((s) => s.playerIndex);
 
+  const accentColor = isT1 ? "blue" : "red";
+
   return (
     <div
       className={`rounded-xl p-4 transition-all ${
@@ -71,12 +73,17 @@ function TeamPanel({
           : "bg-card border border-border"
       }`}
     >
-      <div className="flex items-center gap-2 mb-3">
+      {/* Header: team name + active indicator */}
+      <div className="flex items-center gap-2 mb-2">
         <div
-          className={`w-2 h-2 rounded-full ${isActive ? (isT1 ? "bg-blue-400 animate-pulse" : "bg-red-400 animate-pulse") : "bg-muted-foreground/30"}`}
+          className={`w-2 h-2 rounded-full shrink-0 ${
+            isActive
+              ? `bg-${accentColor}-400 animate-pulse`
+              : "bg-muted-foreground/30"
+          }`}
         />
         <h3
-          className={`text-sm font-semibold ${isT1 ? "text-blue-400" : "text-red-400"}`}
+          className={`font-bold text-base ${isT1 ? "text-blue-400" : "text-red-400"}`}
         >
           {teamName}
         </h3>
@@ -87,34 +94,36 @@ function TeamPanel({
         )}
       </div>
 
-      {config.teamSize > 1 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {players.map((p, i) => (
-            <span
-              key={i}
-              className={`text-[11px] px-1.5 py-0.5 rounded ${
-                isMyTeam && myPlayerIndex === i
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {p.name}
-              {isMyTeam && myPlayerIndex === i ? " (you)" : ""}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Player chips */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {players.map((p, i) => (
+          <span
+            key={i}
+            className={`text-xs px-2 py-0.5 rounded-full border ${
+              isMyTeam && myPlayerIndex === i
+                ? isT1
+                  ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
+                  : "border-red-500/50 bg-red-500/10 text-red-300"
+                : "border-border bg-secondary/40 text-muted-foreground"
+            }`}
+          >
+            {p.name}
+            {isMyTeam && myPlayerIndex === i ? " (you)" : ""}
+          </span>
+        ))}
+      </div>
 
-      <div className="space-y-3">
-        {hasCivPicks && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-              Picks
-            </p>
+      {/* Civ section */}
+      {(hasCivPicks || hasCivBans) && (
+        <div className="space-y-2 mb-3">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
+            Civilizations
+          </p>
+          {hasCivPicks && (
             <div className="grid grid-cols-1 gap-1.5">
               {teamData.civPicks.map((id, i) => (
                 <div
-                  key={`${id}-${i}`}
+                  key={`pick-${id}-${i}`}
                   className="flex items-center gap-3 px-3 py-2 bg-green-500/10 rounded-lg ring-1 ring-green-500/20"
                 >
                   {getCivFlag(id) && (
@@ -124,7 +133,7 @@ function TeamPanel({
                       className="w-8 h-8 rounded-full object-cover shrink-0 ring-2 ring-green-500/30"
                     />
                   )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold truncate">
                       {getCivName(id)}
                     </p>
@@ -136,75 +145,78 @@ function TeamPanel({
                         </p>
                       )}
                   </div>
+                  <span className="text-[10px] text-green-500/70 font-medium uppercase">
+                    Pick
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-        {hasCivBans && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-              Bans
-            </p>
-            <div className="flex flex-wrap gap-2">
+          )}
+          {hasCivBans && (
+            <div className="flex flex-wrap gap-1.5">
               {teamData.civBans.map((id, i) => (
                 <div
-                  key={`${id}-${i}`}
-                  className="flex items-center gap-2 px-2.5 py-1.5 bg-red-500/10 rounded-lg ring-1 ring-red-500/20"
+                  key={`ban-${id}-${i}`}
+                  className="flex items-center gap-1.5 px-2 py-1 bg-red-500/10 rounded-lg ring-1 ring-red-500/20"
                 >
                   {getCivFlag(id) && (
                     <img
                       src={getCivFlag(id)}
                       alt=""
-                      className="w-6 h-6 rounded-full object-cover shrink-0 grayscale opacity-60"
+                      className="w-5 h-5 rounded-full object-cover shrink-0 grayscale opacity-50"
                     />
                   )}
-                  <span className="text-xs text-muted-foreground line-through">
+                  <span className="text-xs text-muted-foreground/70 line-through">
                     {getCivName(id)}
                   </span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-        {hasMapPicks && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-              Map Picks
-            </p>
+          )}
+        </div>
+      )}
+
+      {/* Divider between civ and map sections */}
+      {(hasCivPicks || hasCivBans) && (hasMapPicks || hasMapBans) && (
+        <div className="border-t border-border/40 my-3" />
+      )}
+
+      {/* Map section */}
+      {(hasMapPicks || hasMapBans) && (
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
+            Maps
+          </p>
+          {hasMapPicks && (
             <div className="flex flex-wrap gap-1.5">
               {teamData.mapPicks.map((id, i) => (
                 <span
-                  key={`${id}-${i}`}
-                  className="px-3 py-1.5 bg-green-500/10 rounded-lg ring-1 ring-green-500/20 text-sm font-medium"
+                  key={`mpick-${id}-${i}`}
+                  className="px-3 py-1 bg-green-500/10 rounded-lg ring-1 ring-green-500/20 text-sm font-medium"
                 >
                   {getMapName(id)}
                 </span>
               ))}
             </div>
-          </div>
-        )}
-        {hasMapBans && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-              Map Bans
-            </p>
+          )}
+          {hasMapBans && (
             <div className="flex flex-wrap gap-1.5">
               {teamData.mapBans.map((id, i) => (
                 <span
-                  key={`${id}-${i}`}
-                  className="px-3 py-1.5 bg-red-500/10 rounded-lg ring-1 ring-red-500/20 text-xs text-muted-foreground line-through"
+                  key={`mban-${id}-${i}`}
+                  className="px-3 py-1 bg-red-500/10 rounded-lg ring-1 ring-red-500/20 text-xs text-muted-foreground/70 line-through"
                 >
                   {getMapName(id)}
                 </span>
               ))}
             </div>
-          </div>
-        )}
-        {!hasAny && (
-          <p className="text-xs text-muted-foreground/50">No actions yet</p>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+
+      {!hasAny && (
+        <p className="text-xs text-muted-foreground/40 mt-1">No actions yet</p>
+      )}
     </div>
   );
 }
