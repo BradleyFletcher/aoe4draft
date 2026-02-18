@@ -163,13 +163,16 @@ export async function writeDraft(
       }
 
       const newVersion = currentVersion + 1;
-      const data = {
-        state,
-        history,
-        version: newVersion,
-        createdAt,
-        updatedAt: Date.now(),
-      };
+      // JSON round-trip strips undefined values which Firestore rejects
+      const data = JSON.parse(
+        JSON.stringify({
+          state,
+          history,
+          version: newVersion,
+          createdAt,
+          updatedAt: Date.now(),
+        }),
+      );
 
       try {
         await db.collection(FIRESTORE_COLLECTION).doc(seed).set(data);
