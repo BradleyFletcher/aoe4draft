@@ -38,10 +38,6 @@ function initializeFirebase() {
     }
 
     db = getFirestore();
-    // Only set settings if this is a fresh instance
-    if (!getApps().length || getApps().length === 1) {
-      db.settings({ ignoreUndefinedProperties: true });
-    }
     return db;
   } catch (err) {
     console.error("[Firebase] Init failed:", err);
