@@ -18,11 +18,18 @@ let db: ReturnType<typeof getFirestore> | null = null;
 if (USE_FIRESTORE) {
   try {
     if (!getApps().length) {
+      // Handle private key - it may have literal \n or actual newlines
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY || "";
+      // If it contains literal \n strings, replace them with actual newlines
+      if (privateKey.includes("\\n")) {
+        privateKey = privateKey.replace(/\\n/g, "\n");
+      }
+
       initializeApp({
         credential: cert({
           projectId: process.env.FIREBASE_PROJECT_ID,
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+          privateKey: privateKey,
         }),
       });
     }
