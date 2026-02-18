@@ -4,6 +4,15 @@ import path from "path";
 import crypto from "crypto";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import type { DraftState } from "@/lib/draft";
+
+export interface DraftRecord {
+  state: DraftState;
+  history: DraftState[];
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}
 
 const DATA_DIR = path.join(process.cwd(), "data", "drafts");
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512KB max per draft
@@ -98,13 +107,7 @@ function withWriteLock<T>(seed: string, fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export async function readDraft(seed: string): Promise<{
-  state: any;
-  history: any[];
-  version: number;
-  createdAt: number;
-  updatedAt: number;
-} | null> {
+export async function readDraft(seed: string): Promise<DraftRecord | null> {
   if (!isValidSeed(seed)) return null;
 
   if (USE_FIRESTORE && db) {
@@ -112,7 +115,7 @@ export async function readDraft(seed: string): Promise<{
       const docRef = db.collection(FIRESTORE_COLLECTION).doc(seed);
       const doc = await docRef.get();
       if (!doc.exists) return null;
-      return doc.data() as any;
+      return doc.data() as DraftRecord;
     } catch (err: any) {
       console.error(`[readDraft] Firestore error:`, err?.message || err);
       return null;
@@ -130,8 +133,8 @@ export async function readDraft(seed: string): Promise<{
 
 export async function writeDraft(
   seed: string,
-  state: any,
-  history: any[],
+  state: DraftState,
+  history: DraftState[],
 ): Promise<{ ok: boolean; version: number; error?: string }> {
   if (!isValidSeed(seed)) {
     return { ok: false, version: 0, error: "Invalid seed format" };

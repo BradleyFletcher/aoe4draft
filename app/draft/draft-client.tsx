@@ -2,18 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   type DraftState,
-  type TeamKey,
-  type DraftConfig,
-  type TeamDraftData,
   decodeDraftConfig,
   createInitialDraftState,
   getCurrentStep,
   getAvailableCivs,
   getAvailableMaps,
   applyAction,
+  isAutoStep,
+  resolveAutoStep,
   getCivName,
   getCivFlag,
   getMapName,
@@ -22,204 +22,19 @@ import {
   getTeamPlayers,
   getTeamName,
 } from "@/lib/draft";
-import { ArrowLeft, RotateCcw, CheckCircle2, Undo2 } from "lucide-react";
+import {
+  ArrowLeft,
+  RotateCcw,
+  CheckCircle2,
+  Undo2,
+  Swords,
+} from "lucide-react";
 import Link from "next/link";
+import TeamPanel from "@/components/draft/team-panel";
+import DraftTimeline from "@/components/draft/draft-timeline";
 
 // Validate role format: team1_p0-3, team2_p0-3, or spectator
 const VALID_ROLE_RE = /^(team[12]_p[0-3]|spectator)$/;
-
-function TeamPanel({
-  teamKey,
-  teamName,
-  players,
-  isActive,
-  isMyTeam,
-  myPlayerIndex,
-  teamData,
-  config,
-}: {
-  teamKey: TeamKey;
-  teamName: string;
-  players: { name: string }[];
-  isActive: boolean;
-  isMyTeam: boolean;
-  myPlayerIndex: number | null;
-  teamData: TeamDraftData;
-  config: DraftConfig;
-}) {
-  const isT1 = teamKey === "team1";
-  const hasCivPicks = teamData.civPicks.length > 0;
-  const hasCivBans = teamData.civBans.length > 0;
-  const hasMapPicks = teamData.mapPicks.length > 0;
-  const hasMapBans = teamData.mapBans.length > 0;
-  const hasAny = hasCivPicks || hasCivBans || hasMapPicks || hasMapBans;
-
-  // Map each civ pick index to the playerIndex from the draft steps
-  const civPickPlayerIndices: (number | undefined)[] = config.steps
-    .filter(
-      (s) => s.action === "pick" && s.target === "civ" && s.team === teamKey,
-    )
-    .map((s) => s.playerIndex);
-
-  const accentColor = isT1 ? "blue" : "red";
-
-  return (
-    <div
-      className={`rounded-xl p-4 transition-all ${
-        isActive
-          ? isT1
-            ? "bg-blue-950/20 ring-2 ring-blue-500/50"
-            : "bg-red-950/20 ring-2 ring-red-500/50"
-          : "bg-card border border-border"
-      }`}
-    >
-      {/* Header: team name + active indicator */}
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className={`w-2 h-2 rounded-full shrink-0 ${
-            isActive
-              ? `bg-${accentColor}-400 animate-pulse`
-              : "bg-muted-foreground/30"
-          }`}
-        />
-        <h3
-          className={`font-bold text-base ${isT1 ? "text-blue-400" : "text-red-400"}`}
-        >
-          {teamName}
-        </h3>
-        {isMyTeam && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">
-            YOU
-          </span>
-        )}
-      </div>
-
-      {/* Player chips */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {players.map((p, i) => (
-          <span
-            key={i}
-            className={`text-xs px-2 py-0.5 rounded-full border ${
-              isMyTeam && myPlayerIndex === i
-                ? isT1
-                  ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                  : "border-red-500/50 bg-red-500/10 text-red-300"
-                : "border-border bg-secondary/40 text-muted-foreground"
-            }`}
-          >
-            {p.name}
-            {isMyTeam && myPlayerIndex === i ? " (you)" : ""}
-          </span>
-        ))}
-      </div>
-
-      {/* Civ section */}
-      {(hasCivPicks || hasCivBans) && (
-        <div className="space-y-2 mb-3">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
-            Civilizations
-          </p>
-          {hasCivPicks && (
-            <div className="grid grid-cols-1 gap-1.5">
-              {teamData.civPicks.map((id, i) => (
-                <div
-                  key={`pick-${id}-${i}`}
-                  className="flex items-center gap-3 px-3 py-2 bg-green-500/10 rounded-lg ring-1 ring-green-500/20"
-                >
-                  {getCivFlag(id) && (
-                    <img
-                      src={getCivFlag(id)}
-                      alt=""
-                      className="w-8 h-8 rounded-full object-cover shrink-0 ring-2 ring-green-500/30"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold truncate">
-                      {getCivName(id)}
-                    </p>
-                    {config.teamSize > 1 &&
-                      civPickPlayerIndices[i] !== undefined &&
-                      players[civPickPlayerIndices[i]!] && (
-                        <p className="text-[11px] text-muted-foreground">
-                          {players[civPickPlayerIndices[i]!].name}
-                        </p>
-                      )}
-                  </div>
-                  <span className="text-[10px] text-green-500/70 font-medium uppercase">
-                    Pick
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {hasCivBans && (
-            <div className="flex flex-wrap gap-1.5">
-              {teamData.civBans.map((id, i) => (
-                <div
-                  key={`ban-${id}-${i}`}
-                  className="flex items-center gap-1.5 px-2 py-1 bg-red-500/10 rounded-lg ring-1 ring-red-500/20"
-                >
-                  {getCivFlag(id) && (
-                    <img
-                      src={getCivFlag(id)}
-                      alt=""
-                      className="w-5 h-5 rounded-full object-cover shrink-0 grayscale opacity-50"
-                    />
-                  )}
-                  <span className="text-xs text-muted-foreground/70 line-through">
-                    {getCivName(id)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Divider between civ and map sections */}
-      {(hasCivPicks || hasCivBans) && (hasMapPicks || hasMapBans) && (
-        <div className="border-t border-border/40 my-3" />
-      )}
-
-      {/* Map section */}
-      {(hasMapPicks || hasMapBans) && (
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
-            Maps
-          </p>
-          {hasMapPicks && (
-            <div className="flex flex-wrap gap-1.5">
-              {teamData.mapPicks.map((id, i) => (
-                <span
-                  key={`mpick-${id}-${i}`}
-                  className="px-3 py-1 bg-green-500/10 rounded-lg ring-1 ring-green-500/20 text-sm font-medium"
-                >
-                  {getMapName(id)}
-                </span>
-              ))}
-            </div>
-          )}
-          {hasMapBans && (
-            <div className="flex flex-wrap gap-1.5">
-              {teamData.mapBans.map((id, i) => (
-                <span
-                  key={`mban-${id}-${i}`}
-                  className="px-3 py-1 bg-red-500/10 rounded-lg ring-1 ring-red-500/20 text-xs text-muted-foreground/70 line-through"
-                >
-                  {getMapName(id)}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!hasAny && (
-        <p className="text-xs text-muted-foreground/40 mt-1">No actions yet</p>
-      )}
-    </div>
-  );
-}
 
 async function saveDraftToServer(
   seed: string,
@@ -349,6 +164,25 @@ function DraftContent() {
     return () => clearInterval(interval);
   }, [seed, draftState?.completed]);
 
+  // Auto-resolve steps marked as auto (e.g. odd map pick randomised from pool)
+  useEffect(() => {
+    if (!draftState || draftState.completed || !isAutoStep(draftState)) return;
+    // Only the first non-spectator player triggers the auto-step to avoid duplicates
+    const shouldResolve = role !== "spectator";
+    if (!shouldResolve) return;
+
+    const timeout = setTimeout(() => {
+      const newHistory = [...history, draftState];
+      const newState = resolveAutoStep(draftState);
+      if (newState !== draftState) {
+        setHistory(newHistory);
+        setDraftState(newState);
+        saveAndSync(seed, newState, newHistory);
+      }
+    }, 1500); // brief delay for suspense
+    return () => clearTimeout(timeout);
+  }, [draftState, role, seed, history, saveAndSync]);
+
   const handleSelect = (itemId: string) => {
     if (!draftState) return;
     const currentStep = getCurrentStep(draftState);
@@ -413,7 +247,7 @@ function DraftContent() {
   if (!draftState) {
     return (
       <main className="min-h-screen p-8 flex items-center justify-center">
-        <p className="text-muted-foreground">Loading draft...</p>
+        <p className="text-muted-foreground animate-pulse">Loading draft...</p>
       </main>
     );
   }
@@ -453,13 +287,11 @@ function DraftContent() {
     return getTeamName(config, myTeam);
   })();
 
-  const actorName = currentStep ? getStepActorName(config, currentStep) : "";
-
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
+    <main className="min-h-screen p-4 md:p-6">
+      <div className="max-w-6xl mx-auto">
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <Link
               href="/"
@@ -491,26 +323,42 @@ function DraftContent() {
           </span>
         </div>
 
-        {/* Progress */}
-        <div className="w-full bg-secondary rounded-full h-1 mb-5">
+        {/* Progress bar */}
+        <div className="w-full bg-secondary rounded-full h-1 mb-4">
           <div
             className="bg-primary h-1 rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>
 
+        {/* Draft Timeline — visible to all */}
+        <div className="mb-5 rounded-xl bg-card border border-border p-3">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">
+            Draft Timeline
+          </p>
+          <DraftTimeline state={draftState} />
+        </div>
+
         {/* Turn Banner */}
         {!draftState.completed && currentStep && (
           <div
-            className={`mb-5 rounded-xl px-5 py-4 text-center ${
-              isMyTurn
-                ? currentStep.action === "ban"
-                  ? "bg-red-500/10 ring-1 ring-red-500/30"
-                  : "bg-green-500/10 ring-1 ring-green-500/30"
-                : "bg-card border border-border"
+            className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in ${
+              currentStep.auto
+                ? "bg-yellow-500/10 ring-1 ring-yellow-500/30"
+                : isMyTurn
+                  ? currentStep.action === "ban"
+                    ? "bg-red-500/10 ring-1 ring-red-500/30 animate-draft-glow-red"
+                    : "bg-green-500/10 ring-1 ring-green-500/30 animate-draft-glow-green"
+                  : "bg-card border border-border"
             }`}
           >
-            {isMyTurn ? (
+            {currentStep.auto ? (
+              <p className="text-sm font-semibold text-yellow-400 animate-pulse">
+                Randomising{" "}
+                {currentStep.target === "civ" ? "civilization" : "map"} from
+                pool...
+              </p>
+            ) : isMyTurn ? (
               <>
                 <p className="text-lg font-bold mb-0.5">
                   {currentStep.action === "ban" ? "Ban" : "Pick"} a{" "}
@@ -522,11 +370,26 @@ function DraftContent() {
               </>
             ) : isWaiting ? (
               <p className="text-sm text-muted-foreground">
-                Waiting for {getStepActorName(draftState.config, currentStep)}{" "}
+                Waiting for{" "}
+                <span
+                  className={`font-semibold ${currentStep.team === "team1" ? "text-blue-400" : "text-red-400"}`}
+                >
+                  {getStepActorName(draftState.config, currentStep)}
+                </span>{" "}
                 to {currentStep.action} a{" "}
-                {currentStep.target === "civ" ? "civilization" : "map"}
+                {currentStep.target === "civ" ? "civilization" : "map"}...
               </p>
-            ) : null}
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                <span
+                  className={`font-semibold ${currentStep.team === "team1" ? "text-blue-400" : "text-red-400"}`}
+                >
+                  {getStepActorName(draftState.config, currentStep)}
+                </span>{" "}
+                is {currentStep.action === "ban" ? "banning" : "picking"} a{" "}
+                {currentStep.target === "civ" ? "civilization" : "map"}...
+              </p>
+            )}
           </div>
         )}
 
@@ -544,8 +407,8 @@ function DraftContent() {
           </div>
         )}
 
-        {/* Team Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        {/* Team Panels with VS divider */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 mb-6 items-start">
           <TeamPanel
             teamKey="team1"
             teamName={config.team1Name}
@@ -556,6 +419,16 @@ function DraftContent() {
             teamData={draftState.team1}
             config={config}
           />
+
+          {/* VS Divider */}
+          <div className="hidden lg:flex flex-col items-center justify-center py-8">
+            <div className="w-px h-8 bg-gradient-to-b from-transparent via-border to-transparent" />
+            <div className="my-2 w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center">
+              <Swords className="w-4 h-4 text-primary" />
+            </div>
+            <div className="w-px h-8 bg-gradient-to-b from-transparent via-border to-transparent" />
+          </div>
+
           <TeamPanel
             teamKey="team2"
             teamName={config.team2Name}
@@ -570,7 +443,14 @@ function DraftContent() {
 
         {/* Selection Area */}
         {!draftState.completed && currentStep && (
-          <div className={!canInteract ? "opacity-30 pointer-events-none" : ""}>
+          <div
+            className={`transition-opacity duration-300 ${!canInteract ? "opacity-30 pointer-events-none" : ""}`}
+          >
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-3">
+              {currentStep.action === "ban"
+                ? "Select to Ban"
+                : "Select to Pick"}
+            </p>
             {currentStep.target === "civ" ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                 {config.civPool.map((civId) => {
@@ -592,19 +472,21 @@ function DraftContent() {
                       className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
                         clickable
                           ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 cursor-pointer"
+                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 hover:scale-[1.03] cursor-pointer"
+                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 hover:scale-[1.03] cursor-pointer"
                           : isBanned
-                            ? "opacity-20"
+                            ? "opacity-15"
                             : isPickedT1 || isPickedT2
-                              ? "opacity-30"
-                              : "opacity-20"
+                              ? "opacity-25"
+                              : "opacity-15"
                       }`}
                     >
                       {civFlag && (
-                        <img
+                        <Image
                           src={civFlag}
-                          alt=""
+                          alt={civName}
+                          width={48}
+                          height={48}
                           className={`w-12 h-12 rounded-full object-cover shrink-0 ${
                             isBanned
                               ? "grayscale ring-2 ring-red-500/30"
@@ -617,7 +499,9 @@ function DraftContent() {
                           {civName}
                         </p>
                         {isBanned && (
-                          <p className="text-[10px] text-red-400">Banned</p>
+                          <p className="text-[10px] text-red-400 font-medium">
+                            Banned
+                          </p>
                         )}
                         {isPickedT1 && (
                           <p className="text-[10px] text-blue-400">
@@ -651,23 +535,25 @@ function DraftContent() {
                       key={mapId}
                       onClick={() => clickable && handleSelect(mapId)}
                       disabled={!clickable}
-                      className={`p-2.5 rounded-xl text-left transition-all ${
+                      className={`p-3 rounded-xl text-left transition-all ${
                         clickable
                           ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 cursor-pointer"
+                            ? "bg-card ring-1 ring-border hover:ring-red-500/60 hover:bg-red-500/10 hover:scale-[1.03] cursor-pointer"
+                            : "bg-card ring-1 ring-border hover:ring-green-500/60 hover:bg-green-500/10 hover:scale-[1.03] cursor-pointer"
                           : isBanned
-                            ? "opacity-20"
+                            ? "opacity-15"
                             : isPickedT1 || isPickedT2
-                              ? "opacity-30"
-                              : "opacity-20"
+                              ? "opacity-25"
+                              : "opacity-15"
                       }`}
                     >
                       <span className="text-xs font-medium truncate block">
                         {mapName}
                       </span>
                       {isBanned && (
-                        <span className="text-[10px] text-red-400">Banned</span>
+                        <span className="text-[10px] text-red-400 font-medium">
+                          Banned
+                        </span>
                       )}
                       {isPickedT1 && (
                         <span className="text-[10px] text-blue-400">
@@ -719,7 +605,9 @@ export default function DraftPage() {
     <Suspense
       fallback={
         <main className="min-h-screen p-8 flex items-center justify-center">
-          <p className="text-muted-foreground">Loading draft...</p>
+          <p className="text-muted-foreground animate-pulse">
+            Loading draft...
+          </p>
         </main>
       }
     >

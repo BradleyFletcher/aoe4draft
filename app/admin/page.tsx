@@ -9,6 +9,7 @@ import {
   type DraftConfig,
   type TeamSize,
   type TeamPlayer,
+  type BanMode,
   generateSeed,
   PRESET_DRAFT_FORMATS,
 } from "@/lib/draft";
@@ -41,6 +42,8 @@ function makeDefaultPlayers(size: TeamSize, teamNum: 1 | 2): TeamPlayer[] {
 export default function AdminPage() {
   const [tournamentName, setTournamentName] = useState("AOE4 Tournament Draft");
   const [teamSize, setTeamSize] = useState<TeamSize>(1);
+  const [banMode, setBanMode] = useState<BanMode>("global");
+  const [randomOddMap, setRandomOddMap] = useState(true);
   const [team1Name, setTeam1Name] = useState("Team 1");
   const [team2Name, setTeam2Name] = useState("Team 2");
   const [team1Players, setTeam1Players] = useState<TeamPlayer[]>(
@@ -208,12 +211,29 @@ export default function AdminPage() {
 
     try {
       const seed = generateSeed();
+      // Apply or strip auto flag on the last odd map pick based on toggle
+      const finalSteps = steps.map((s, i) => {
+        const mapPickIndices = steps
+          .map((st, idx) =>
+            st.action === "pick" && st.target === "map" ? idx : -1,
+          )
+          .filter((idx) => idx >= 0);
+        const isLastMapPick =
+          mapPickIndices.length % 2 === 1 &&
+          i === mapPickIndices[mapPickIndices.length - 1];
+        if (isLastMapPick) {
+          return { ...s, auto: randomOddMap ? true : undefined };
+        }
+        return { ...s, auto: undefined };
+      });
+
       const config: DraftConfig = {
         name: tournamentName,
         teamSize,
+        banMode,
         civPool: Array.from(selectedCivs),
         mapPool: Array.from(selectedMaps),
-        steps,
+        steps: finalSteps,
         team1Name,
         team2Name,
         team1Players,
@@ -336,7 +356,7 @@ export default function AdminPage() {
         {/* Step 1: Game Mode */}
         <section className="mb-6 rounded-xl bg-card border border-border p-5">
           <h2 className="text-sm font-semibold mb-4">Game Mode</h2>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-2 mb-4">
             {TEAM_SIZES.map((ts) => (
               <button
                 key={ts.value}
@@ -350,6 +370,70 @@ export default function AdminPage() {
                 {ts.label}
               </button>
             ))}
+          </div>
+
+          <h3 className="text-xs font-semibold text-muted-foreground mb-2">
+            Ban Mode
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setBanMode("global")}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                banMode === "global"
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Global</span>
+              <span className="text-[11px] opacity-70">
+                Banned civs/maps removed for both teams
+              </span>
+            </button>
+            <button
+              onClick={() => setBanMode("per-team")}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                banMode === "per-team"
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Per-Team</span>
+              <span className="text-[11px] opacity-70">
+                Your bans only affect the other team
+              </span>
+            </button>
+          </div>
+
+          <h3 className="text-xs font-semibold text-muted-foreground mb-2 mt-4">
+            Odd Map Pick
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setRandomOddMap(true)}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                randomOddMap
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Randomise</span>
+              <span className="text-[11px] opacity-70">
+                Last odd map pick is randomly selected
+              </span>
+            </button>
+            <button
+              onClick={() => setRandomOddMap(false)}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                !randomOddMap
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Manual</span>
+              <span className="text-[11px] opacity-70">
+                All map picks are chosen by teams
+              </span>
+            </button>
           </div>
         </section>
 

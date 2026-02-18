@@ -13,12 +13,14 @@ export type DraftActionType = "ban" | "pick";
 export type DraftActionTarget = "civ" | "map";
 export type TeamKey = "team1" | "team2";
 export type TeamSize = 1 | 2 | 3 | 4;
+export type BanMode = "global" | "per-team";
 
 export interface DraftStep {
   action: DraftActionType;
   target: DraftActionTarget;
   team: TeamKey;
   playerIndex?: number; // which player on the team (0-based). undefined = team-level (bans, map picks)
+  auto?: boolean; // if true, this step is resolved automatically with a random pick from the available pool
 }
 
 export interface TeamPlayer {
@@ -28,6 +30,7 @@ export interface TeamPlayer {
 export interface DraftConfig {
   name: string;
   teamSize: TeamSize;
+  banMode: BanMode;
   civPool: string[];
   mapPool: string[];
   steps: DraftStep[];
@@ -86,6 +89,9 @@ export function validateDraftConfig(obj: unknown): DraftConfig | null {
 
   if (typeof c.name !== "string" || c.name.length > 200) return null;
   if (!VALID_TEAM_SIZES.has(c.teamSize as number)) return null;
+  // Default banMode to "global" for backwards compatibility
+  if (c.banMode === undefined) c.banMode = "global";
+  if (c.banMode !== "global" && c.banMode !== "per-team") return null;
 
   if (!Array.isArray(c.civPool) || c.civPool.length > MAX_POOL_SIZE)
     return null;
@@ -178,25 +184,36 @@ export function getTeamName(config: DraftConfig, team: TeamKey): string {
 
 export function getAvailableCivs(state: DraftState): string[] {
   const step = getCurrentStep(state);
+  const isPerTeam = state.config.banMode === "per-team";
 
   if (step?.action === "ban") {
-    // When banning: exclude civs already picked by either team, and already banned by this team
+    // When banning: exclude civs already picked or banned by either team
     const allPicked = new Set([
       ...state.team1.civPicks,
       ...state.team2.civPicks,
     ]);
-    const myBans = new Set(getTeamData(state, step.team).civBans);
+    const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
     return state.config.civPool.filter(
-      (id) => !allPicked.has(id) && !myBans.has(id),
+      (id) => !allPicked.has(id) && !allBanned.has(id),
     );
   }
 
-  // When picking: exclude all bans, and civs already picked by the picking team
-  // (the other team CAN pick the same civ, but your own team cannot)
-  const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
+  // When picking:
+  // Global mode: all bans from both teams are excluded for everyone
+  // Per-team mode: only the OTHER team's bans affect you (your own bans don't restrict you)
   const myPicks = step
     ? new Set(getTeamData(state, step.team).civPicks)
     : new Set<string>();
+
+  if (isPerTeam && step) {
+    const otherTeam = step.team === "team1" ? "team2" : "team1";
+    const otherBans = new Set(getTeamData(state, otherTeam).civBans);
+    return state.config.civPool.filter(
+      (id) => !otherBans.has(id) && !myPicks.has(id),
+    );
+  }
+
+  const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
   return state.config.civPool.filter(
     (id) => !allBanned.has(id) && !myPicks.has(id),
   );
@@ -204,12 +221,24 @@ export function getAvailableCivs(state: DraftState): string[] {
 
 export function getAvailableMaps(state: DraftState): string[] {
   const step = getCurrentStep(state);
+  const isPerTeam = state.config.banMode === "per-team";
   const allPicked = new Set([...state.team1.mapPicks, ...state.team2.mapPicks]);
 
   if (step?.action === "ban") {
-    const myBans = new Set(getTeamData(state, step.team).mapBans);
+    const allBanned = new Set([...state.team1.mapBans, ...state.team2.mapBans]);
     return state.config.mapPool.filter(
-      (id) => !allPicked.has(id) && !myBans.has(id),
+      (id) => !allPicked.has(id) && !allBanned.has(id),
+    );
+  }
+
+  // When picking:
+  // Global mode: all bans excluded
+  // Per-team mode: only the other team's bans affect you
+  if (isPerTeam && step) {
+    const otherTeam = step.team === "team1" ? "team2" : "team1";
+    const otherBans = new Set(getTeamData(state, otherTeam).mapBans);
+    return state.config.mapPool.filter(
+      (id) => !allPicked.has(id) && !otherBans.has(id),
     );
   }
 
@@ -217,6 +246,23 @@ export function getAvailableMaps(state: DraftState): string[] {
   return state.config.mapPool.filter(
     (id) => !allPicked.has(id) && !allBanned.has(id),
   );
+}
+
+export function isAutoStep(state: DraftState): boolean {
+  const step = getCurrentStep(state);
+  return !!step?.auto;
+}
+
+export function resolveAutoStep(state: DraftState): DraftState {
+  const step = getCurrentStep(state);
+  if (!step?.auto) return state;
+
+  const available =
+    step.target === "civ" ? getAvailableCivs(state) : getAvailableMaps(state);
+  if (available.length === 0) return state;
+
+  const randomId = available[Math.floor(Math.random() * available.length)];
+  return applyAction(state, randomId);
 }
 
 export function applyAction(state: DraftState, itemId: string): DraftState {
@@ -332,7 +378,7 @@ export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
       steps.push({ action: "ban", target: "map", team: "team2" });
       steps.push({ action: "ban", target: "map", team: "team1" });
       steps.push({ action: "ban", target: "map", team: "team2" });
-      steps.push({ action: "pick", target: "map", team: "team1" });
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
       return steps;
     },
   },
@@ -342,7 +388,7 @@ export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
     generate: (teamSize) => {
       const steps: DraftStep[] = [];
       steps.push(...generateCivPicks(teamSize, 1));
-      steps.push({ action: "pick", target: "map", team: "team1" });
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
       return steps;
     },
   },
@@ -363,7 +409,7 @@ export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
       steps.push({ action: "ban", target: "map", team: "team2" });
       steps.push({ action: "pick", target: "map", team: "team1" });
       steps.push({ action: "pick", target: "map", team: "team2" });
-      steps.push({ action: "pick", target: "map", team: "team1" });
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
       return steps;
     },
   },
@@ -375,7 +421,7 @@ export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
       steps.push(...generateCivPicks(teamSize, 3));
       steps.push({ action: "pick", target: "map", team: "team1" });
       steps.push({ action: "pick", target: "map", team: "team2" });
-      steps.push({ action: "pick", target: "map", team: "team1" });
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
       return steps;
     },
   },
