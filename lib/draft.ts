@@ -187,14 +187,17 @@ export function getAvailableCivs(state: DraftState): string[] {
   const isPerTeam = state.config.banMode === "per-team";
 
   if (step?.action === "ban") {
-    // When banning: exclude civs already picked or banned by either team
     const allPicked = new Set([
       ...state.team1.civPicks,
       ...state.team2.civPicks,
     ]);
-    const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
+    // Global: can't ban anything already banned by either team
+    // Per-team: can only see your own bans as used (other team can ban the same civ)
+    const bannedSet = isPerTeam
+      ? new Set(getTeamData(state, step.team).civBans)
+      : new Set([...state.team1.civBans, ...state.team2.civBans]);
     return state.config.civPool.filter(
-      (id) => !allPicked.has(id) && !allBanned.has(id),
+      (id) => !allPicked.has(id) && !bannedSet.has(id),
     );
   }
 
@@ -225,9 +228,13 @@ export function getAvailableMaps(state: DraftState): string[] {
   const allPicked = new Set([...state.team1.mapPicks, ...state.team2.mapPicks]);
 
   if (step?.action === "ban") {
-    const allBanned = new Set([...state.team1.mapBans, ...state.team2.mapBans]);
+    // Global: can't ban anything already banned by either team
+    // Per-team: only your own bans are excluded (other team can ban the same map)
+    const bannedSet = isPerTeam
+      ? new Set(getTeamData(state, step.team).mapBans)
+      : new Set([...state.team1.mapBans, ...state.team2.mapBans]);
     return state.config.mapPool.filter(
-      (id) => !allPicked.has(id) && !allBanned.has(id),
+      (id) => !allPicked.has(id) && !bannedSet.has(id),
     );
   }
 
@@ -363,6 +370,29 @@ function generateCivPicks(
 }
 
 export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
+  default: {
+    label: "Default",
+    description:
+      "2 civ bans/team, 3 civ picks/player, 1 map ban/team, 3 maps (last random)",
+    generate: (teamSize) => {
+      const steps: DraftStep[] = [];
+      // 2 civ bans per team
+      for (let i = 0; i < 2; i++) {
+        steps.push({ action: "ban", target: "civ", team: "team1" });
+        steps.push({ action: "ban", target: "civ", team: "team2" });
+      }
+      // 3 civ picks per player
+      steps.push(...generateCivPicks(teamSize, 3));
+      // 1 map ban per team
+      steps.push({ action: "ban", target: "map", team: "team1" });
+      steps.push({ action: "ban", target: "map", team: "team2" });
+      // 3 map picks (T1, T2, random)
+      steps.push({ action: "pick", target: "map", team: "team1" });
+      steps.push({ action: "pick", target: "map", team: "team2" });
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      return steps;
+    },
+  },
   bans: {
     label: "Bans",
     description: "Civ bans, 1 civ pick/player, map bans, 1 map pick",

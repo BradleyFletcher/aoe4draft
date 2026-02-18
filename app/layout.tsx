@@ -39,7 +39,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans`}>
-        <header className="pt-4 pb-2">
+        {/* Global background */}
+        <div
+          className="fixed inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/aoe4draft.png')" }}
+        />
+        <div className="fixed inset-0 bg-gradient-to-b from-background/95 via-background/93 to-background" />
+
+        <header className="relative z-20 py-4">
           <div className="flex justify-center">
             <Link href="/" className="hover:opacity-80 transition-opacity">
               <Image
@@ -47,25 +54,32 @@ export default function RootLayout({
                 alt="AOE4 Draft"
                 width={180}
                 height={60}
-                className="h-14 w-auto"
+                className="h-12 w-auto"
               />
             </Link>
           </div>
         </header>
-        {children}
-        <footer className="py-4 text-center text-[11px] text-muted-foreground border-t border-border">
-          <p>
-            &copy; {new Date().getFullYear()} Built by{" "}
-            <a
-              href="https://flowtide.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              Brad Fletcher
-            </a>
-          </p>
-        </footer>
+        <div className="relative z-10 min-h-[calc(100vh-4rem)] flex flex-col">
+          <div className="flex-1">{children}</div>
+          <footer className="py-6 px-4">
+            <div className="max-w-4xl mx-auto border-t border-border/30 pt-6 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground/40">
+                aoe4draft.win
+              </p>
+              <p className="text-[11px] text-muted-foreground/40">
+                Built by{" "}
+                <a
+                  href="https://flowtide.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-muted-foreground/60 transition-colors"
+                >
+                  Brad Fletcher
+                </a>
+              </p>
+            </div>
+          </footer>
+        </div>
       </body>
     </html>
   );

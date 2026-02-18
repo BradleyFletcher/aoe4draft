@@ -59,7 +59,7 @@ export default function AdminPage() {
     new Set(maps.map((m) => m.id)),
   );
   const [steps, setSteps] = useState<DraftStep[]>(
-    PRESET_DRAFT_FORMATS["bans"].generate(1),
+    PRESET_DRAFT_FORMATS["default"].generate(1),
   );
   const [generatedSeed, setGeneratedSeed] = useState<string | null>(null);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export default function AdminPage() {
       setTeam1Name("Team 1");
       setTeam2Name("Team 2");
     }
-    setSteps(PRESET_DRAFT_FORMATS["bans"].generate(size));
+    setSteps(PRESET_DRAFT_FORMATS["default"].generate(size));
     setGeneratedUrl(null);
     setGeneratedSeed(null);
     setGenerateError(null);
@@ -338,7 +338,7 @@ export default function AdminPage() {
     "w-full px-3 py-2.5 bg-input rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 text-sm placeholder:text-muted-foreground/50 transition-colors";
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
+    <main className="min-h-screen px-4 pb-8 md:px-8">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <Link
@@ -354,7 +354,7 @@ export default function AdminPage() {
         </div>
 
         {/* Step 1: Game Mode */}
-        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
           <h2 className="text-sm font-semibold mb-4">Game Mode</h2>
           <div className="grid grid-cols-4 gap-2 mb-4">
             {TEAM_SIZES.map((ts) => (
@@ -438,7 +438,7 @@ export default function AdminPage() {
         </section>
 
         {/* Step 2: Names */}
-        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
           <h2 className="text-sm font-semibold mb-4">Players</h2>
           <div className="space-y-3">
             <input
@@ -492,7 +492,7 @@ export default function AdminPage() {
         </section>
 
         {/* Step 3: Pools (collapsible) */}
-        <section className="mb-6 rounded-xl bg-card border border-border p-5">
+        <section className="mb-6 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Pools</h2>
             <span className="text-xs text-muted-foreground">
@@ -805,7 +805,7 @@ export default function AdminPage() {
         {/* Generated Links */}
         {generatedUrl && (
           <section className="mb-8 space-y-4">
-            <div className="p-5 rounded-xl bg-card border border-border space-y-5">
+            <div className="p-5 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 space-y-5">
               <p className="text-xs text-muted-foreground font-mono">
                 Seed: {generatedSeed}
               </p>

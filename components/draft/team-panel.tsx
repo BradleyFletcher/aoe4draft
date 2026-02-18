@@ -42,7 +42,11 @@ export default function TeamPanel({
     (s) => s.action === "ban" && s.target === "civ" && s.team === teamKey,
   );
   const mapPickSteps = config.steps.filter(
-    (s) => s.action === "pick" && s.target === "map" && s.team === teamKey,
+    (s) =>
+      s.action === "pick" &&
+      s.target === "map" &&
+      s.team === teamKey &&
+      !s.auto,
   );
   const mapBanSteps = config.steps.filter(
     (s) => s.action === "ban" && s.target === "map" && s.team === teamKey,
@@ -83,7 +87,7 @@ export default function TeamPanel({
           ? isT1
             ? "bg-blue-950/20 ring-2 ring-blue-500/50 animate-draft-glow-blue"
             : "bg-red-950/20 ring-2 ring-red-500/50 animate-draft-glow-red"
-          : "bg-card border border-border"
+          : "bg-card/80 backdrop-blur-sm border border-border/50"
       }`}
     >
       {/* Header */}

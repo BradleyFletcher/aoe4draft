@@ -13,7 +13,6 @@ import {
   getAvailableMaps,
   applyAction,
   isAutoStep,
-  resolveAutoStep,
   getCivName,
   getCivFlag,
   getMapName,
@@ -28,6 +27,7 @@ import {
   CheckCircle2,
   Undo2,
   Swords,
+  Dice5,
 } from "lucide-react";
 import Link from "next/link";
 import TeamPanel from "@/components/draft/team-panel";
@@ -81,6 +81,16 @@ function DraftContent() {
   const [role, setRole] = useState<string>("spectator");
   const [seed, setSeed] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Randomisation overlay state
+  const [randomOverlay, setRandomOverlay] = useState<{
+    phase: "shuffling" | "revealed";
+    displayName: string;
+    finalName: string;
+    finalId: string;
+    pool: string[];
+    target: "civ" | "map";
+  } | null>(null);
 
   const versionRef = useRef(0);
   const lastActionRef = useRef(0);
@@ -167,21 +177,108 @@ function DraftContent() {
   // Auto-resolve steps marked as auto (e.g. odd map pick randomised from pool)
   useEffect(() => {
     if (!draftState || draftState.completed || !isAutoStep(draftState)) return;
-    // Only the first non-spectator player triggers the auto-step to avoid duplicates
-    const shouldResolve = role !== "spectator";
-    if (!shouldResolve) return;
+    if (randomOverlay) return; // already animating
+
+    const step = getCurrentStep(draftState);
+    if (!step?.auto) return;
+
+    const available =
+      step.target === "civ"
+        ? getAvailableCivs(draftState)
+        : getAvailableMaps(draftState);
+    if (available.length === 0) return;
+
+    // Pre-compute the result
+    const finalId = available[Math.floor(Math.random() * available.length)];
+    const finalName =
+      step.target === "civ" ? getCivName(finalId) : getMapName(finalId);
+    const pool = available.map((id) =>
+      step.target === "civ" ? getCivName(id) : getMapName(id),
+    );
+
+    // Start the shuffle animation after a dramatic pause
+    const startTimeout = setTimeout(() => {
+      setRandomOverlay({
+        phase: "shuffling",
+        displayName: pool[0],
+        finalName,
+        finalId,
+        pool,
+        target: step.target,
+      });
+    }, 1200);
+
+    return () => clearTimeout(startTimeout);
+  }, [draftState, randomOverlay]);
+
+  // Run the shuffle animation cycle with recursive setTimeout for true deceleration
+  useEffect(() => {
+    if (!randomOverlay || randomOverlay.phase !== "shuffling") return;
+
+    const { pool, finalName } = randomOverlay;
+    const totalTicks = 30;
+    let tick = 0;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    function nextTick() {
+      if (cancelled) return;
+      tick++;
+      if (tick >= totalTicks) {
+        // Land on the final result
+        setRandomOverlay((prev) =>
+          prev ? { ...prev, phase: "revealed", displayName: finalName } : null,
+        );
+        return;
+      }
+      // Pick a random name from the pool
+      const randomName = pool[Math.floor(Math.random() * pool.length)];
+      setRandomOverlay((prev) =>
+        prev ? { ...prev, displayName: randomName } : null,
+      );
+      // Starts fast (80ms), exponentially slows to ~500ms at the end
+      const delay = 80 + Math.pow(tick / totalTicks, 2.5) * 500;
+      timeoutId = setTimeout(nextTick, delay);
+    }
+
+    // Kick off the first tick
+    timeoutId = setTimeout(nextTick, 80);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [randomOverlay?.phase]);
+
+  // After reveal, apply the action
+  useEffect(() => {
+    if (!randomOverlay || randomOverlay.phase !== "revealed" || !draftState)
+      return;
 
     const timeout = setTimeout(() => {
+      const { finalId } = randomOverlay;
       const newHistory = [...history, draftState];
-      const newState = resolveAutoStep(draftState);
-      if (newState !== draftState) {
-        setHistory(newHistory);
-        setDraftState(newState);
+      const newState = applyAction(draftState, finalId);
+      setHistory(newHistory);
+      setDraftState(newState);
+      // Only non-spectators save to server
+      if (role !== "spectator") {
         saveAndSync(seed, newState, newHistory);
       }
-    }, 1500); // brief delay for suspense
+      // Dismiss overlay after a moment
+      setTimeout(() => setRandomOverlay(null), 1000);
+    }, 2500); // hold the reveal for 2.5s
+
     return () => clearTimeout(timeout);
-  }, [draftState, role, seed, history, saveAndSync]);
+  }, [
+    randomOverlay?.phase,
+    randomOverlay?.finalId,
+    draftState,
+    history,
+    role,
+    seed,
+    saveAndSync,
+  ]);
 
   const handleSelect = (itemId: string) => {
     if (!draftState) return;
@@ -288,7 +385,47 @@ function DraftContent() {
   })();
 
   return (
-    <main className="min-h-screen p-4 md:p-6">
+    <main className="min-h-screen px-4 pb-8 md:px-6">
+      {/* Randomisation Overlay */}
+      {randomOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="flex flex-col items-center gap-6 p-10 rounded-2xl bg-card border border-border shadow-2xl shadow-yellow-500/10 max-w-md w-full mx-4">
+            <Dice5
+              className={`w-10 h-10 text-yellow-400 ${
+                randomOverlay.phase === "shuffling" ? "animate-spin" : ""
+              }`}
+            />
+            <p className="text-xs uppercase tracking-widest text-muted-foreground/60 font-semibold">
+              Randomising{" "}
+              {randomOverlay.target === "civ" ? "Civilization" : "Map"}
+            </p>
+            <div
+              className={`text-3xl font-bold tracking-tight text-center transition-all duration-150 min-h-[2.5rem] ${
+                randomOverlay.phase === "revealed"
+                  ? "text-yellow-400 scale-110"
+                  : "text-foreground"
+              }`}
+            >
+              {randomOverlay.displayName}
+            </div>
+            {randomOverlay.phase === "revealed" && (
+              <div className="flex items-center gap-2 text-sm text-green-400 font-semibold animate-in zoom-in duration-300">
+                <CheckCircle2 className="w-4 h-4" />
+                Selected!
+              </div>
+            )}
+            {randomOverlay.phase === "shuffling" && (
+              <div className="w-48 h-1 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full bg-yellow-400/60 rounded-full animate-pulse"
+                  style={{ width: "60%" }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         {/* Top bar */}
         <div className="flex items-center justify-between mb-4">
@@ -306,7 +443,8 @@ function DraftContent() {
               <p className="text-[11px] text-muted-foreground">
                 {config.teamSize}v{config.teamSize} &middot; Step{" "}
                 {Math.min(draftState.currentStepIndex + 1, config.steps.length)}
-                /{config.steps.length}
+                /{config.steps.length} &middot;{" "}
+                <span className="font-mono">{seed}</span>
               </p>
             </div>
           </div>
@@ -332,7 +470,7 @@ function DraftContent() {
         </div>
 
         {/* Draft Timeline — visible to all */}
-        <div className="mb-5 rounded-xl bg-card border border-border p-3">
+        <div className="mb-5 rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-3">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">
             Draft Timeline
           </p>
@@ -407,8 +545,8 @@ function DraftContent() {
           </div>
         )}
 
-        {/* Team Panels with VS divider */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 mb-6 items-start">
+        {/* Team Panels with center hub */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_180px_1fr] gap-4 mb-6 items-start">
           <TeamPanel
             teamKey="team1"
             teamName={config.team1Name}
@@ -420,13 +558,85 @@ function DraftContent() {
             config={config}
           />
 
-          {/* VS Divider */}
-          <div className="hidden lg:flex flex-col items-center justify-center py-8">
-            <div className="w-px h-8 bg-gradient-to-b from-transparent via-border to-transparent" />
-            <div className="my-2 w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center">
-              <Swords className="w-4 h-4 text-primary" />
+          {/* Center Hub — VS + Random Map */}
+          <div className="hidden lg:flex flex-col items-center justify-start pt-4 gap-3">
+            {/* VS badge */}
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-px h-4 bg-gradient-to-b from-transparent to-border" />
+              <div className="w-12 h-12 rounded-full bg-card border-2 border-border flex items-center justify-center shadow-lg">
+                <Swords className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-[10px] font-bold tracking-widest text-muted-foreground/40 uppercase">
+                VS
+              </span>
+              <div className="w-px h-4 bg-gradient-to-b from-border to-transparent" />
             </div>
-            <div className="w-px h-8 bg-gradient-to-b from-transparent via-border to-transparent" />
+
+            {/* Random Map section */}
+            {(() => {
+              const autoMapSteps = config.steps.filter(
+                (s) => s.action === "pick" && s.target === "map" && s.auto,
+              );
+              if (autoMapSteps.length === 0) return null;
+              const t1ManualCount = config.steps.filter(
+                (s) =>
+                  s.action === "pick" &&
+                  s.target === "map" &&
+                  s.team === "team1" &&
+                  !s.auto,
+              ).length;
+              const t2ManualCount = config.steps.filter(
+                (s) =>
+                  s.action === "pick" &&
+                  s.target === "map" &&
+                  s.team === "team2" &&
+                  !s.auto,
+              ).length;
+              const autoResults: string[] = [];
+              if (draftState.team1.mapPicks.length > t1ManualCount) {
+                autoResults.push(
+                  ...draftState.team1.mapPicks.slice(t1ManualCount),
+                );
+              }
+              if (draftState.team2.mapPicks.length > t2ManualCount) {
+                autoResults.push(
+                  ...draftState.team2.mapPicks.slice(t2ManualCount),
+                );
+              }
+              const hasAutoResult = autoResults.length > 0;
+              const isPending = !hasAutoResult && !draftState.completed;
+
+              return (
+                <div className="w-full rounded-xl bg-card/80 backdrop-blur-sm border border-border/50 p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5 mb-2">
+                    <Dice5 className="w-3.5 h-3.5 text-yellow-400" />
+                    <span className="text-[9px] uppercase tracking-widest text-muted-foreground/50 font-semibold">
+                      Decider Map
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1.5">
+                    {autoMapSteps.map((_, i) => {
+                      const mapId = autoResults[i];
+                      const filled = !!mapId;
+                      return (
+                        <span
+                          key={i}
+                          className={`w-full px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                            filled
+                              ? "bg-yellow-500/10 ring-1 ring-yellow-500/30 text-yellow-400 animate-draft-reveal"
+                              : isPending
+                                ? "ring-1 ring-yellow-500/15 text-yellow-400/30 animate-pulse"
+                                : "ring-1 ring-border/20 text-muted-foreground/25"
+                          }`}
+                        >
+                          {filled ? getMapName(mapId) : "?"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <TeamPanel
@@ -457,9 +667,11 @@ function DraftContent() {
                   const civName = getCivName(civId);
                   const civFlag = getCivFlag(civId);
                   const isAvailable = availableCivSet.has(civId);
-                  const isBanned =
+                  const isBannedByAny =
                     draftState.team1.civBans.includes(civId) ||
                     draftState.team2.civBans.includes(civId);
+                  // In per-team mode, only show as banned if it's actually unavailable
+                  const isBanned = isBannedByAny && !isAvailable;
                   const isPickedT1 = draftState.team1.civPicks.includes(civId);
                   const isPickedT2 = draftState.team2.civPicks.includes(civId);
                   const clickable = isAvailable && canInteract;
@@ -523,9 +735,10 @@ function DraftContent() {
                 {config.mapPool.map((mapId) => {
                   const mapName = getMapName(mapId);
                   const isAvailable = availableMapSet.has(mapId);
-                  const isBanned =
+                  const isBannedByAny =
                     draftState.team1.mapBans.includes(mapId) ||
                     draftState.team2.mapBans.includes(mapId);
+                  const isBanned = isBannedByAny && !isAvailable;
                   const isPickedT1 = draftState.team1.mapPicks.includes(mapId);
                   const isPickedT2 = draftState.team2.mapPicks.includes(mapId);
                   const clickable = isAvailable && canInteract;
@@ -574,8 +787,16 @@ function DraftContent() {
         )}
 
         {/* Controls — hidden for spectators */}
+        {/* Footer with seed */}
+        <div className="mt-8 pt-4 border-t border-border/40 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/50">
+          <span>Seed:</span>
+          <code className="font-mono bg-secondary/40 px-1.5 py-0.5 rounded text-muted-foreground/70 select-all">
+            {seed}
+          </code>
+        </div>
+
         {role !== "spectator" && (
-          <div className="mt-6 flex justify-center gap-2">
+          <div className="mt-4 flex justify-center gap-2">
             <Button
               variant="outline"
               size="sm"
