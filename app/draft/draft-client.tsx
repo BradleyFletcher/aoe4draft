@@ -333,7 +333,7 @@ function DraftContent() {
         setDraftState(saved.state);
         setHistory(saved.history ?? []);
       }
-    }, 1000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [seed, draftState?.completed]);
 

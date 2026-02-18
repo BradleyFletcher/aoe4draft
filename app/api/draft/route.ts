@@ -8,9 +8,9 @@ import {
 } from "@/lib/storage";
 import { validateDraftConfig } from "@/lib/draft";
 
-// Simple in-memory rate limiter: max 120 requests per minute per IP
+// Simple in-memory rate limiter: max 600 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 120;
+const RATE_LIMIT = 600;
 const RATE_WINDOW_MS = 60 * 1000;
 let lastRateLimitPrune = 0;
 
