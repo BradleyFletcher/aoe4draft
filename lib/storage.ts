@@ -13,9 +13,12 @@ const FIRESTORE_COLLECTION = "drafts";
 // Use Firestore in production (when Firebase creds available), filesystem locally
 const USE_FIRESTORE = !!process.env.FIREBASE_PROJECT_ID;
 
-// Initialize Firebase Admin SDK
+// Initialize Firebase Admin SDK (singleton pattern)
 let db: ReturnType<typeof getFirestore> | null = null;
-if (USE_FIRESTORE) {
+
+function initializeFirebase() {
+  if (db) return db; // Already initialized
+
   try {
     if (!getApps().length) {
       // Handle private key - it may have literal \n or actual newlines
@@ -33,11 +36,21 @@ if (USE_FIRESTORE) {
         }),
       });
     }
+
     db = getFirestore();
-    db.settings({ ignoreUndefinedProperties: true });
+    // Only set settings if this is a fresh instance
+    if (!getApps().length || getApps().length === 1) {
+      db.settings({ ignoreUndefinedProperties: true });
+    }
+    return db;
   } catch (err) {
     console.error("[Firebase] Init failed:", err);
+    return null;
   }
+}
+
+if (USE_FIRESTORE) {
+  db = initializeFirebase();
 }
 
 // Strict seed format: 8-16 char alphanumeric uppercase
