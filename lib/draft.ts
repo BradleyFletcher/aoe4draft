@@ -208,12 +208,36 @@ export function getAvailableCivs(state: DraftState): string[] {
   // When picking:
   // Global mode: all bans from both teams are excluded for everyone
   // Per-team mode: only the OTHER team's bans affect you (your own bans don't restrict you)
-  // allowDuplicatePicks: teammates can pick the same civ
+  //
+  // A single player can NEVER pick the same civ twice (always enforced).
+  // allowDuplicatePicks controls whether different players on the same team
+  // can share a civ:
+  //   false (Unique) = once a civ is picked by any teammate, it's locked for the whole team
+  //   true (Allow Duplicates) = teammates can pick the same civ, but each player still can't repeat
   const allowDupes = state.config.allowDuplicatePicks;
-  const myPicks =
-    step && !allowDupes
-      ? new Set(getTeamData(state, step.team).civPicks)
-      : new Set<string>();
+  let myPicks = new Set<string>();
+  if (step && step.playerIndex !== undefined) {
+    // Always block civs THIS specific player has already picked
+    let pickCount = 0;
+    for (const s of state.config.steps.slice(0, state.currentStepIndex)) {
+      if (s.action === "pick" && s.target === "civ" && s.team === step.team) {
+        if (s.playerIndex === step.playerIndex) {
+          const civId = getTeamData(state, step.team).civPicks[pickCount];
+          if (civId) myPicks.add(civId);
+        }
+        pickCount++;
+      }
+    }
+    // If duplicates NOT allowed, also block all team picks
+    if (!allowDupes) {
+      for (const id of getTeamData(state, step.team).civPicks) {
+        myPicks.add(id);
+      }
+    }
+  } else if (step) {
+    // Team-level pick (no playerIndex) — always block all team picks
+    myPicks = new Set(getTeamData(state, step.team).civPicks);
+  }
 
   if (isPerTeam && step) {
     const otherTeam = step.team === "team1" ? "team2" : "team1";
