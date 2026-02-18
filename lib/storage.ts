@@ -82,16 +82,20 @@ export async function readDraft(seed: string): Promise<{
   if (USE_BLOB) {
     try {
       const blobInfo = await head(getBlobPath(seed));
-      // Fetch with cache: 'no-store' to avoid bot protection issues
-      const res = await fetch(blobInfo.url, {
+      // Try downloadUrl first (has ?download=1 param)
+      const res = await fetch(blobInfo.downloadUrl, {
         cache: "no-store",
-        headers: {
-          "User-Agent": "Vercel Edge Functions",
-        },
       });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
+      if (!res.ok) {
+        console.error(
+          `[readDraft] Blob fetch failed: ${res.status} ${res.statusText}`,
+        );
+        return null;
+      }
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch (err: any) {
+      console.error(`[readDraft] Error:`, err?.message || err);
       return null;
     }
   } else {
