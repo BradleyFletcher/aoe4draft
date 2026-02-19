@@ -73,7 +73,7 @@ async function sendDraftAction(
   action: string,
   role: string,
   itemId?: string,
-): Promise<{ ok: boolean; version?: number }> {
+): Promise<{ ok: boolean; version?: number; pickedId?: string }> {
   if (!seed) return { ok: false };
   try {
     const res = await fetch("/api/draft/action", {
@@ -83,7 +83,7 @@ async function sendDraftAction(
     });
     if (!res.ok) return { ok: false };
     const data = await res.json();
-    return { ok: !!data.ok, version: data.version };
+    return { ok: !!data.ok, version: data.version, pickedId: data.pickedId };
   } catch {
     return { ok: false };
   }
@@ -283,20 +283,33 @@ function DraftContent() {
     });
   }, [draftState, role, seed]);
 
-  // Auto-resolve steps marked as auto (e.g. odd map pick randomised from pool).
-  // Only the designated resolver (the step's team p0) actually computes the random
-  // result and saves it. Everyone else shows a waiting animation and receives the
-  // result via SSE/polling — this prevents each client rolling a different outcome.
+  // ── Server-driven auto-resolve ──────────────────────────────────────
+  // When the draft reaches an auto step (e.g. random map pick), ONE client
+  // asks the server to resolve it. The server picks a random item atomically,
+  // saves the state, and returns the pickedId. All clients show a shuffle
+  // animation and reveal the server-chosen result.
+  //
+  // Flow:
+  //   1. Effect detects auto step → starts shuffle overlay → first non-spectator
+  //      client sends "auto-resolve" to server (server deduplicates via no-op).
+  //   2. Server returns { pickedId } → overlay transitions to "revealed".
+  //   3. SSE notifies all clients → they fetch the advanced state → overlay
+  //      shows the result and then dismisses.
+
+  const autoResolveStepRef = useRef<number | null>(null);
+
+  // 1) Detect auto step → start shuffle + ask server to resolve
   useEffect(() => {
-    if (!draftState || draftState.completed || !isAutoStep(draftState)) return;
+    if (!draftState || draftState.completed || !isAutoStep(draftState)) {
+      autoResolveStepRef.current = null;
+      return;
+    }
     if (randomOverlay) return; // already animating
+    if (autoResolveStepRef.current === draftState.currentStepIndex) return;
+    autoResolveStepRef.current = draftState.currentStepIndex;
 
     const step = getCurrentStep(draftState);
     if (!step?.auto) return;
-
-    // Determine if this client is the resolver for this auto step
-    const resolverRole = `${step.team}_p0`;
-    const isResolver = role === resolverRole;
 
     const available =
       step.target === "civ"
@@ -308,49 +321,56 @@ function DraftContent() {
       step.target === "civ" ? getCivName(id) : getMapName(id),
     );
 
-    if (isResolver) {
-      // This client resolves the random pick
-      const finalId = available[Math.floor(Math.random() * available.length)];
-      const finalName =
-        step.target === "civ" ? getCivName(finalId) : getMapName(finalId);
+    // Show shuffling overlay immediately for all clients
+    setRandomOverlay({
+      phase: "shuffling",
+      displayName: pool[0],
+      finalName: "",
+      finalId: "",
+      pool,
+      target: step.target,
+    });
 
-      const startTimeout = setTimeout(() => {
-        setRandomOverlay({
-          phase: "shuffling",
-          displayName: pool[0],
-          finalName,
-          finalId,
-          pool,
-          target: step.target,
-        });
-      }, 1200);
-
-      return () => clearTimeout(startTimeout);
-    } else {
-      // Non-resolver: show a waiting animation (no finalId — we'll get the
-      // result from the server when the resolver saves it)
-      const startTimeout = setTimeout(() => {
-        setRandomOverlay({
-          phase: "shuffling",
-          displayName: pool[0],
-          finalName: "",
-          finalId: "",
-          pool,
-          target: step.target,
-        });
-      }, 1200);
-
-      return () => clearTimeout(startTimeout);
+    // Any non-spectator client asks the server to resolve (server deduplicates)
+    if (role !== "spectator") {
+      sendDraftAction(seed, "auto-resolve", role).then((result) => {
+        if (result.ok && result.pickedId) {
+          const name =
+            step.target === "civ"
+              ? getCivName(result.pickedId)
+              : getMapName(result.pickedId);
+          // Transition to revealed — the shuffle effect will land on this
+          setRandomOverlay((prev) =>
+            prev
+              ? { ...prev, finalId: result.pickedId!, finalName: name }
+              : null,
+          );
+        }
+        // Refresh state from server
+        if (result.ok && result.version) {
+          loadDraftFromServer(seed, roleRef.current).then((saved) => {
+            if (saved && saved.version > versionRef.current) {
+              versionRef.current = saved.version;
+              setDraftState(saved.state);
+              setHistory(saved.history ?? []);
+            }
+          });
+        }
+      });
     }
-  }, [draftState, randomOverlay, role]);
+  }, [
+    draftState?.currentStepIndex,
+    draftState?.completed,
+    randomOverlay,
+    role,
+  ]);
 
-  // Run the shuffle animation cycle with recursive setTimeout for true deceleration
+  // 2) Shuffle animation — spins through pool names, then lands on final
   useEffect(() => {
     if (!randomOverlay || randomOverlay.phase !== "shuffling") return;
 
-    const { pool, finalName, finalId } = randomOverlay;
-    const isResolver = !!finalId; // resolver has a finalId, others don't
-    const totalTicks = isResolver ? 30 : 60; // non-resolvers spin longer while waiting
+    const { pool, finalId, finalName } = randomOverlay;
+    const hasFinal = !!finalId; // server has responded with the result
     let tick = 0;
     let timeoutId: ReturnType<typeof setTimeout>;
     let cancelled = false;
@@ -358,28 +378,25 @@ function DraftContent() {
     function nextTick() {
       if (cancelled) return;
       tick++;
-      if (tick >= totalTicks) {
-        if (isResolver) {
-          // Resolver: land on the final result
-          setRandomOverlay((prev) =>
-            prev
-              ? { ...prev, phase: "revealed", displayName: finalName }
-              : null,
-          );
-        } else {
-          // Non-resolver: keep spinning — the overlay will be dismissed
-          // when the server update arrives and advances the step
-          tick = 0;
-        }
+
+      // If we have the final result and enough ticks have passed, reveal
+      if (hasFinal && tick >= 25) {
+        setRandomOverlay((prev) =>
+          prev ? { ...prev, phase: "revealed", displayName: finalName } : null,
+        );
         return;
       }
+
+      // Keep spinning — loop if we haven't got the result yet
+      if (tick >= 60) tick = 0;
+
       const randomName = pool[Math.floor(Math.random() * pool.length)];
       setRandomOverlay((prev) =>
         prev ? { ...prev, displayName: randomName } : null,
       );
-      const delay = isResolver
-        ? 80 + Math.pow(tick / totalTicks, 2.5) * 500
-        : 80 + Math.pow(tick / totalTicks, 1.5) * 200;
+      const delay = hasFinal
+        ? 80 + Math.pow(tick / 25, 2.5) * 500
+        : 80 + Math.pow((tick % 30) / 30, 1.5) * 200;
       timeoutId = setTimeout(nextTick, delay);
     }
 
@@ -391,43 +408,57 @@ function DraftContent() {
     };
   }, [randomOverlay?.phase, randomOverlay?.finalId]);
 
-  // After reveal, only the resolver applies the action and saves to server
+  // 3) After reveal, dismiss the overlay after a short delay
   useEffect(() => {
-    if (!randomOverlay || randomOverlay.phase !== "revealed" || !draftState)
-      return;
-    // Only the resolver (who has a real finalId) should apply
-    if (!randomOverlay.finalId) return;
+    if (!randomOverlay || randomOverlay.phase !== "revealed") return;
 
     const timeout = setTimeout(() => {
-      const { finalId } = randomOverlay;
-      const newHistory = [...history, draftState];
-      const newState = applyAction(draftState, finalId);
-      setHistory(newHistory);
-      setDraftState(newState);
-      saveAndSync(seed, newState, newHistory);
-      setTimeout(() => setRandomOverlay(null), 1000);
+      setRandomOverlay(null);
     }, 2500);
 
     return () => clearTimeout(timeout);
-  }, [
-    randomOverlay?.phase,
-    randomOverlay?.finalId,
-    draftState,
-    history,
-    seed,
-    saveAndSync,
-  ]);
+  }, [randomOverlay?.phase]);
 
-  // Dismiss the random overlay for non-resolvers when the step advances
-  // (i.e. the resolver saved the result and we got the update via SSE/polling)
+  // 4) Fallback: if SSE delivers the state update (step advanced) while
+  //    we're still shuffling without a finalId (spectator, or server was slow),
+  //    look up what was picked and reveal it.
   useEffect(() => {
     if (!randomOverlay || !draftState) return;
-    // If we're a non-resolver (no finalId) and the draft has moved past the auto step,
-    // dismiss the overlay
-    if (!randomOverlay.finalId && !isAutoStep(draftState)) {
+    if (randomOverlay.phase !== "shuffling" || randomOverlay.finalId) return;
+    // If the step has advanced past the auto step, the server already resolved it
+    if (!isAutoStep(draftState)) {
+      // Figure out what was picked by looking at the latest team data
+      const stepIdx = autoResolveStepRef.current;
+      if (stepIdx !== null && stepIdx < draftState.config.steps.length) {
+        const resolvedStep = draftState.config.steps[stepIdx];
+        const teamData =
+          resolvedStep.team === "team1" ? draftState.team1 : draftState.team2;
+        const picks =
+          resolvedStep.target === "civ" ? teamData.civPicks : teamData.mapPicks;
+        const lastPick = picks[picks.length - 1];
+        if (lastPick) {
+          const name =
+            resolvedStep.target === "civ"
+              ? getCivName(lastPick)
+              : getMapName(lastPick);
+          setRandomOverlay((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  finalId: lastPick,
+                  finalName: name,
+                  phase: "revealed",
+                  displayName: name,
+                }
+              : null,
+          );
+          return;
+        }
+      }
+      // Couldn't determine — just dismiss
       setRandomOverlay(null);
     }
-  }, [draftState, randomOverlay]);
+  }, [draftState?.currentStepIndex, randomOverlay]);
 
   const handleSelect = (itemId: string) => {
     if (!draftState) return;

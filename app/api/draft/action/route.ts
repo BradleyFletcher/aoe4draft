@@ -6,6 +6,8 @@ import {
   getOrInitHiddenPhase,
   applyHiddenBan,
   isHiddenBanStep,
+  isAutoStep,
+  resolveAutoStep,
   getTeamFromRole,
   type DraftState,
   type TeamKey,
@@ -19,9 +21,10 @@ import { publish } from "@/lib/draft-events";
 //
 // Body: { seed, action, role, itemId? }
 // Actions:
-//   "ready"       — mark a player as ready
-//   "init-hidden" — initialise the hidden ban phase
-//   "hidden-ban"  — submit a hidden ban (requires itemId)
+//   "ready"        — mark a player as ready
+//   "init-hidden"  — initialise the hidden ban phase
+//   "hidden-ban"   — submit a hidden ban (requires itemId)
+//   "auto-resolve" — server picks a random item for an auto step (e.g. odd map)
 
 export async function POST(req: NextRequest) {
   try {
@@ -52,6 +55,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Closure variable to capture extra data from the mutation
+    let pickedId: string | null = null;
+
     // Atomic read-modify-write inside the per-seed write lock
     const result = await modifyDraft(
       seed,
@@ -64,18 +70,24 @@ export async function POST(req: NextRequest) {
 
           case "init-hidden":
             if (!isHiddenBanStep(state) || state.hiddenBanPhase) {
-              return state; // no-op: already initialised or not at a hidden step
+              return state;
             }
             return getOrInitHiddenPhase(state);
 
           case "hidden-ban": {
             const team = getTeamFromRole(role) as TeamKey;
-            // Auto-init the phase if needed
             if (!state.hiddenBanPhase && isHiddenBanStep(state)) {
               state = getOrInitHiddenPhase(state);
             }
-            if (!state.hiddenBanPhase) return state; // not at a hidden step
+            if (!state.hiddenBanPhase) return state;
             return applyHiddenBan(state, team, itemId);
+          }
+
+          case "auto-resolve": {
+            if (!isAutoStep(state)) return state; // not at an auto step — no-op
+            const resolved = resolveAutoStep(state);
+            pickedId = resolved.pickedId;
+            return resolved.state;
           }
 
           default:
@@ -91,7 +103,11 @@ export async function POST(req: NextRequest) {
     // Notify SSE clients
     publish(seed, result.version);
 
-    return NextResponse.json({ ok: true, version: result.version });
+    return NextResponse.json({
+      ok: true,
+      version: result.version,
+      ...(pickedId ? { pickedId } : {}),
+    });
   } catch {
     return NextResponse.json(
       { error: "Invalid request body" },

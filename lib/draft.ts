@@ -329,16 +329,19 @@ export function isAutoStep(state: DraftState): boolean {
   return !!step?.auto;
 }
 
-export function resolveAutoStep(state: DraftState): DraftState {
+export function resolveAutoStep(state: DraftState): {
+  state: DraftState;
+  pickedId: string | null;
+} {
   const step = getCurrentStep(state);
-  if (!step?.auto) return state;
+  if (!step?.auto) return { state, pickedId: null };
 
   const available =
     step.target === "civ" ? getAvailableCivs(state) : getAvailableMaps(state);
-  if (available.length === 0) return state;
+  if (available.length === 0) return { state, pickedId: null };
 
   const randomId = available[Math.floor(Math.random() * available.length)];
-  return applyAction(state, randomId);
+  return { state: applyAction(state, randomId), pickedId: randomId };
 }
 
 // Detect the hidden ban phase starting at a given step index.
