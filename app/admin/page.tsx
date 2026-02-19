@@ -44,6 +44,7 @@ export default function AdminPage() {
   const [teamSize, setTeamSize] = useState<TeamSize>(1);
   const [banMode, setBanMode] = useState<BanMode>("global");
   const [allowDuplicatePicks, setAllowDuplicatePicks] = useState(false);
+  const [hiddenBans, setHiddenBans] = useState(false);
   const [randomOddMap, setRandomOddMap] = useState(true);
   const [team1Name, setTeam1Name] = useState("Team 1");
   const [team2Name, setTeam2Name] = useState("Team 2");
@@ -90,7 +91,7 @@ export default function AdminPage() {
       setTeam1Name("Team 1");
       setTeam2Name("Team 2");
     }
-    setSteps(PRESET_DRAFT_FORMATS["default"].generate(size));
+    setSteps(PRESET_DRAFT_FORMATS["default"].generate(size, { hiddenBans }));
     setGeneratedUrl(null);
     setGeneratedSeed(null);
     setGenerateError(null);
@@ -182,7 +183,7 @@ export default function AdminPage() {
   const loadPreset = (presetKey: string) => {
     const preset = PRESET_DRAFT_FORMATS[presetKey];
     if (preset) {
-      setSteps(preset.generate(teamSize));
+      setSteps(preset.generate(teamSize, { hiddenBans }));
       setGeneratedUrl(null);
       setGeneratedSeed(null);
       setGenerateError(null);
@@ -249,6 +250,7 @@ export default function AdminPage() {
         team1: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
         team2: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
         completed: false,
+        readyPlayers: {},
       };
       const res = await fetch("/api/draft", {
         method: "POST",
@@ -434,6 +436,53 @@ export default function AdminPage() {
               <span className="font-semibold block">Manual</span>
               <span className="text-[11px] opacity-70">
                 All map picks are chosen by teams
+              </span>
+            </button>
+          </div>
+
+          <h3 className="text-xs font-semibold text-muted-foreground mb-2 mt-4">
+            Hidden Bans
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setHiddenBans(true);
+                setSteps((prev) =>
+                  prev.map((s) =>
+                    s.action === "ban" ? { ...s, hidden: true } : s,
+                  ),
+                );
+              }}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                hiddenBans
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Simultaneous</span>
+              <span className="text-[11px] opacity-70">
+                Both teams ban at the same time, hidden until revealed
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setHiddenBans(false);
+                setSteps((prev) =>
+                  prev.map((s) => {
+                    const { hidden, ...rest } = s;
+                    return rest;
+                  }),
+                );
+              }}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                !hiddenBans
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Sequential</span>
+              <span className="text-[11px] opacity-70">
+                Teams take turns banning, all bans visible
               </span>
             </button>
           </div>

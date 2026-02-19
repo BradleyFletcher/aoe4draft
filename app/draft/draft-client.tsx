@@ -20,6 +20,16 @@ import {
   getTeamFromRole,
   getTeamPlayers,
   getTeamName,
+  isAllReady,
+  setPlayerReady,
+  getRequiredRoles,
+  isHiddenBanStep,
+  getOrInitHiddenPhase,
+  applyHiddenBan,
+  hasTeamCompletedHiddenBans,
+  getRemainingHiddenBans,
+  getAvailableForHiddenBan,
+  type TeamKey,
 } from "@/lib/draft";
 import {
   ArrowLeft,
@@ -56,14 +66,42 @@ async function saveDraftToServer(
   }
 }
 
-async function loadDraftFromServer(seed: string): Promise<{
+// Atomic server-side action: reads current state, applies mutation, saves.
+// Prevents race conditions where two clients overwrite each other's data.
+async function sendDraftAction(
+  seed: string,
+  action: string,
+  role: string,
+  itemId?: string,
+): Promise<{ ok: boolean; version?: number }> {
+  if (!seed) return { ok: false };
+  try {
+    const res = await fetch("/api/draft/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seed, action, role, itemId }),
+    });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    return { ok: !!data.ok, version: data.version };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function loadDraftFromServer(
+  seed: string,
+  role?: string,
+): Promise<{
   state: DraftState;
   history: DraftState[];
   version: number;
 } | null> {
   if (!seed) return null;
   try {
-    const res = await fetch(`/api/draft?seed=${encodeURIComponent(seed)}`);
+    let url = `/api/draft?seed=${encodeURIComponent(seed)}`;
+    if (role) url += `&role=${encodeURIComponent(role)}`;
+    const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.exists && data.state) return data;
@@ -93,13 +131,13 @@ function DraftContent() {
   } | null>(null);
 
   const versionRef = useRef(0);
-  const lastActionRef = useRef(0);
   const isSavingRef = useRef(false);
+  const roleRef = useRef(role);
+  roleRef.current = role;
 
   const saveAndSync = useCallback(
     async (s: string, state: DraftState, hist: DraftState[]) => {
       isSavingRef.current = true;
-      lastActionRef.current = Date.now();
       try {
         const result = await saveDraftToServer(s, state, hist);
         if (!result.ok) {
@@ -132,7 +170,10 @@ function DraftContent() {
     }
 
     // Load draft state from server (config is stored there)
-    loadDraftFromServer(seedParam).then((saved) => {
+    loadDraftFromServer(
+      seedParam,
+      VALID_ROLE_RE.test(roleParam) ? roleParam : "spectator",
+    ).then((saved) => {
       if (saved && saved.state && saved.state.config) {
         setDraftState(saved.state);
         setHistory(saved.history ?? []);
@@ -157,24 +198,95 @@ function DraftContent() {
     });
   }, [searchParams]);
 
-  // Poll server for updates from other players (stop when completed)
+  // Real-time updates via SSE, with polling fallback.
+  // Uses roleRef to avoid stale closures — the SSE connection doesn't need to
+  // reconnect when role changes, it just needs the latest role when fetching.
   useEffect(() => {
     if (!seed || draftState?.completed) return;
-    const interval = setInterval(async () => {
-      // Skip polling while a save is in flight or within 3s of a local action
-      if (isSavingRef.current) return;
-      if (Date.now() - lastActionRef.current < 3000) return;
-      const saved = await loadDraftFromServer(seed);
-      if (saved && saved.version > versionRef.current) {
-        versionRef.current = saved.version;
-        setDraftState(saved.state);
-        setHistory(saved.history ?? []);
+
+    let cancelled = false;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+    let fetchInFlight = false;
+
+    const fetchLatest = async () => {
+      // Only skip if we are actively saving (our own write is in flight)
+      if (isSavingRef.current || fetchInFlight) return;
+      fetchInFlight = true;
+      try {
+        const saved = await loadDraftFromServer(seed, roleRef.current);
+        if (!cancelled && saved && saved.version > versionRef.current) {
+          versionRef.current = saved.version;
+          setDraftState(saved.state);
+          setHistory(saved.history ?? []);
+        }
+      } finally {
+        fetchInFlight = false;
       }
-    }, 2000);
-    return () => clearInterval(interval);
+    };
+
+    // Try SSE first
+    const url = `/api/draft/stream?seed=${encodeURIComponent(seed)}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.version && data.version > versionRef.current) {
+          fetchLatest();
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      // SSE failed — fall back to polling
+      es.close();
+      if (!cancelled && !fallbackInterval) {
+        fallbackInterval = setInterval(fetchLatest, 3000);
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      es.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
+    };
   }, [seed, draftState?.completed]);
 
-  // Auto-resolve steps marked as auto (e.g. odd map pick randomised from pool)
+  // Auto-initialise hidden ban phase when we reach hidden ban steps
+  const hiddenInitRef = useRef(false);
+  useEffect(() => {
+    if (!draftState || draftState.completed) return;
+    if (!isHiddenBanStep(draftState) || draftState.hiddenBanPhase) {
+      hiddenInitRef.current = false;
+      return;
+    }
+    if (role === "spectator") return;
+    if (hiddenInitRef.current) return; // already sending
+    hiddenInitRef.current = true;
+
+    // Use server-side action to init — prevents race if both clients try at once
+    sendDraftAction(seed, "init-hidden", role).then((result) => {
+      if (result.ok && result.version) {
+        loadDraftFromServer(seed, role).then((saved) => {
+          if (saved && saved.version >= (result.version ?? 0)) {
+            versionRef.current = saved.version;
+            setDraftState(saved.state);
+            setHistory(saved.history ?? []);
+          }
+          hiddenInitRef.current = false;
+        });
+      } else {
+        hiddenInitRef.current = false;
+      }
+    });
+  }, [draftState, role, seed]);
+
+  // Auto-resolve steps marked as auto (e.g. odd map pick randomised from pool).
+  // Only the designated resolver (the step's team p0) actually computes the random
+  // result and saves it. Everyone else shows a waiting animation and receives the
+  // result via SSE/polling — this prevents each client rolling a different outcome.
   useEffect(() => {
     if (!draftState || draftState.completed || !isAutoStep(draftState)) return;
     if (randomOverlay) return; // already animating
@@ -182,41 +294,63 @@ function DraftContent() {
     const step = getCurrentStep(draftState);
     if (!step?.auto) return;
 
+    // Determine if this client is the resolver for this auto step
+    const resolverRole = `${step.team}_p0`;
+    const isResolver = role === resolverRole;
+
     const available =
       step.target === "civ"
         ? getAvailableCivs(draftState)
         : getAvailableMaps(draftState);
     if (available.length === 0) return;
 
-    // Pre-compute the result
-    const finalId = available[Math.floor(Math.random() * available.length)];
-    const finalName =
-      step.target === "civ" ? getCivName(finalId) : getMapName(finalId);
     const pool = available.map((id) =>
       step.target === "civ" ? getCivName(id) : getMapName(id),
     );
 
-    // Start the shuffle animation after a dramatic pause
-    const startTimeout = setTimeout(() => {
-      setRandomOverlay({
-        phase: "shuffling",
-        displayName: pool[0],
-        finalName,
-        finalId,
-        pool,
-        target: step.target,
-      });
-    }, 1200);
+    if (isResolver) {
+      // This client resolves the random pick
+      const finalId = available[Math.floor(Math.random() * available.length)];
+      const finalName =
+        step.target === "civ" ? getCivName(finalId) : getMapName(finalId);
 
-    return () => clearTimeout(startTimeout);
-  }, [draftState, randomOverlay]);
+      const startTimeout = setTimeout(() => {
+        setRandomOverlay({
+          phase: "shuffling",
+          displayName: pool[0],
+          finalName,
+          finalId,
+          pool,
+          target: step.target,
+        });
+      }, 1200);
+
+      return () => clearTimeout(startTimeout);
+    } else {
+      // Non-resolver: show a waiting animation (no finalId — we'll get the
+      // result from the server when the resolver saves it)
+      const startTimeout = setTimeout(() => {
+        setRandomOverlay({
+          phase: "shuffling",
+          displayName: pool[0],
+          finalName: "",
+          finalId: "",
+          pool,
+          target: step.target,
+        });
+      }, 1200);
+
+      return () => clearTimeout(startTimeout);
+    }
+  }, [draftState, randomOverlay, role]);
 
   // Run the shuffle animation cycle with recursive setTimeout for true deceleration
   useEffect(() => {
     if (!randomOverlay || randomOverlay.phase !== "shuffling") return;
 
-    const { pool, finalName } = randomOverlay;
-    const totalTicks = 30;
+    const { pool, finalName, finalId } = randomOverlay;
+    const isResolver = !!finalId; // resolver has a finalId, others don't
+    const totalTicks = isResolver ? 30 : 60; // non-resolvers spin longer while waiting
     let tick = 0;
     let timeoutId: ReturnType<typeof setTimeout>;
     let cancelled = false;
@@ -225,35 +359,44 @@ function DraftContent() {
       if (cancelled) return;
       tick++;
       if (tick >= totalTicks) {
-        // Land on the final result
-        setRandomOverlay((prev) =>
-          prev ? { ...prev, phase: "revealed", displayName: finalName } : null,
-        );
+        if (isResolver) {
+          // Resolver: land on the final result
+          setRandomOverlay((prev) =>
+            prev
+              ? { ...prev, phase: "revealed", displayName: finalName }
+              : null,
+          );
+        } else {
+          // Non-resolver: keep spinning — the overlay will be dismissed
+          // when the server update arrives and advances the step
+          tick = 0;
+        }
         return;
       }
-      // Pick a random name from the pool
       const randomName = pool[Math.floor(Math.random() * pool.length)];
       setRandomOverlay((prev) =>
         prev ? { ...prev, displayName: randomName } : null,
       );
-      // Starts fast (80ms), exponentially slows to ~500ms at the end
-      const delay = 80 + Math.pow(tick / totalTicks, 2.5) * 500;
+      const delay = isResolver
+        ? 80 + Math.pow(tick / totalTicks, 2.5) * 500
+        : 80 + Math.pow(tick / totalTicks, 1.5) * 200;
       timeoutId = setTimeout(nextTick, delay);
     }
 
-    // Kick off the first tick
     timeoutId = setTimeout(nextTick, 80);
 
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [randomOverlay?.phase]);
+  }, [randomOverlay?.phase, randomOverlay?.finalId]);
 
-  // After reveal, apply the action
+  // After reveal, only the resolver applies the action and saves to server
   useEffect(() => {
     if (!randomOverlay || randomOverlay.phase !== "revealed" || !draftState)
       return;
+    // Only the resolver (who has a real finalId) should apply
+    if (!randomOverlay.finalId) return;
 
     const timeout = setTimeout(() => {
       const { finalId } = randomOverlay;
@@ -261,13 +404,9 @@ function DraftContent() {
       const newState = applyAction(draftState, finalId);
       setHistory(newHistory);
       setDraftState(newState);
-      // Only non-spectators save to server
-      if (role !== "spectator") {
-        saveAndSync(seed, newState, newHistory);
-      }
-      // Dismiss overlay after a moment
+      saveAndSync(seed, newState, newHistory);
       setTimeout(() => setRandomOverlay(null), 1000);
-    }, 2500); // hold the reveal for 2.5s
+    }, 2500);
 
     return () => clearTimeout(timeout);
   }, [
@@ -275,10 +414,20 @@ function DraftContent() {
     randomOverlay?.finalId,
     draftState,
     history,
-    role,
     seed,
     saveAndSync,
   ]);
+
+  // Dismiss the random overlay for non-resolvers when the step advances
+  // (i.e. the resolver saved the result and we got the update via SSE/polling)
+  useEffect(() => {
+    if (!randomOverlay || !draftState) return;
+    // If we're a non-resolver (no finalId) and the draft has moved past the auto step,
+    // dismiss the overlay
+    if (!randomOverlay.finalId && !isAutoStep(draftState)) {
+      setRandomOverlay(null);
+    }
+  }, [draftState, randomOverlay]);
 
   const handleSelect = (itemId: string) => {
     if (!draftState) return;
@@ -327,6 +476,47 @@ function DraftContent() {
     saveAndSync(seed, fresh, []);
   };
 
+  const handleReady = async () => {
+    if (!draftState || role === "spectator") return;
+    // Optimistic local update
+    const optimistic = setPlayerReady(draftState, role);
+    setDraftState(optimistic);
+    // Server-side atomic merge
+    const result = await sendDraftAction(seed, "ready", role);
+    if (result.ok && result.version) {
+      const saved = await loadDraftFromServer(seed, role);
+      if (saved && saved.version >= result.version) {
+        versionRef.current = saved.version;
+        setDraftState(saved.state);
+        setHistory(saved.history ?? []);
+      }
+    }
+  };
+
+  const handleHiddenBan = async (itemId: string) => {
+    if (!draftState || role === "spectator") return;
+    const myTeam = getTeamFromRole(role) as TeamKey;
+    if (!myTeam) return;
+    if (hasTeamCompletedHiddenBans(draftState, myTeam)) return;
+
+    const available = new Set(getAvailableForHiddenBan(draftState, myTeam));
+    if (!available.has(itemId)) return;
+
+    // Optimistic local update
+    const optimistic = applyHiddenBan(draftState, myTeam, itemId);
+    setDraftState(optimistic);
+    // Server-side atomic merge — server reads authoritative state, applies ban, saves
+    const result = await sendDraftAction(seed, "hidden-ban", role, itemId);
+    if (result.ok && result.version) {
+      const saved = await loadDraftFromServer(seed, role);
+      if (saved && saved.version >= result.version) {
+        versionRef.current = saved.version;
+        setDraftState(saved.state);
+        setHistory(saved.history ?? []);
+      }
+    }
+  };
+
   if (error) {
     return (
       <main className="min-h-screen p-8 flex items-center justify-center">
@@ -345,6 +535,177 @@ function DraftContent() {
     return (
       <main className="min-h-screen p-8 flex items-center justify-center">
         <p className="text-muted-foreground animate-pulse">Loading draft...</p>
+      </main>
+    );
+  }
+
+  // Ready check: block drafting until all players have readied up
+  if (
+    !isAllReady(draftState) &&
+    !draftState.completed &&
+    draftState.currentStepIndex === 0
+  ) {
+    const requiredRoles = getRequiredRoles(draftState.config);
+    const readyMap = draftState.readyPlayers ?? {};
+    const iAmReady = role !== "spectator" && readyMap[role];
+    const readyCount = requiredRoles.filter((r) => readyMap[r]).length;
+    const config = draftState.config;
+
+    return (
+      <main className="min-h-screen px-4 pb-8 md:px-6">
+        <div className="max-w-lg mx-auto pt-12">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-8">
+            <Link
+              href="/"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <div>
+              <h1 className="text-base font-semibold leading-tight">
+                {config.name}
+              </h1>
+              <p className="text-[11px] text-muted-foreground">
+                {config.teamSize}v{config.teamSize} — Waiting for players
+              </p>
+            </div>
+          </div>
+
+          {/* Ready status card */}
+          <div className="rounded-xl bg-card border border-border/50 p-6 mb-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-sm font-semibold">Player Ready Check</h2>
+              <span className="text-xs text-muted-foreground">
+                {readyCount}/{requiredRoles.length} ready
+              </span>
+            </div>
+
+            {/* Team 1 */}
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-widest text-blue-400/60 font-semibold mb-2">
+                {config.team1Name}
+              </p>
+              <div className="space-y-1.5">
+                {config.team1Players.map((player, i) => {
+                  const playerRole = `team1_p${i}`;
+                  const isReady = readyMap[playerRole];
+                  const isMe = role === playerRole;
+                  return (
+                    <div
+                      key={playerRole}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                        isMe
+                          ? "bg-blue-500/10 ring-1 ring-blue-500/20"
+                          : "bg-secondary/30"
+                      }`}
+                    >
+                      <span
+                        className={
+                          isMe
+                            ? "font-semibold text-blue-300"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {player.name}
+                        {isMe && (
+                          <span className="text-[10px] ml-1.5 opacity-60">
+                            (you)
+                          </span>
+                        )}
+                      </span>
+                      {isReady ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-muted-foreground/20 animate-pulse" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Team 2 */}
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-widest text-red-400/60 font-semibold mb-2">
+                {config.team2Name}
+              </p>
+              <div className="space-y-1.5">
+                {config.team2Players.map((player, i) => {
+                  const playerRole = `team2_p${i}`;
+                  const isReady = readyMap[playerRole];
+                  const isMe = role === playerRole;
+                  return (
+                    <div
+                      key={playerRole}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                        isMe
+                          ? "bg-red-500/10 ring-1 ring-red-500/20"
+                          : "bg-secondary/30"
+                      }`}
+                    >
+                      <span
+                        className={
+                          isMe
+                            ? "font-semibold text-red-300"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {player.name}
+                        {isMe && (
+                          <span className="text-[10px] ml-1.5 opacity-60">
+                            (you)
+                          </span>
+                        )}
+                      </span>
+                      {isReady ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-muted-foreground/20 animate-pulse" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Ready button or status */}
+          {role === "spectator" ? (
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">
+                Waiting for all players to ready up...
+              </p>
+            </div>
+          ) : iAmReady ? (
+            <div className="text-center">
+              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
+                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                <span className="text-sm font-medium text-green-400">
+                  You are ready — waiting for others...
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center">
+              <Button
+                onClick={handleReady}
+                size="lg"
+                className="px-8 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+              >
+                Ready
+              </Button>
+            </div>
+          )}
+
+          {/* Seed footer */}
+          <div className="mt-8 pt-4 border-t border-border/30 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/40">
+            <span>Seed:</span>
+            <code className="font-mono bg-secondary/30 px-1.5 py-0.5 rounded text-muted-foreground/50 select-all">
+              {seed}
+            </code>
+          </div>
+        </div>
       </main>
     );
   }
@@ -471,48 +832,94 @@ function DraftContent() {
           <DraftTimeline state={draftState} />
         </div>
 
-        {/* Turn Banner */}
-        {!draftState.completed && currentStep && (
-          <div
-            className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in ${
-              currentStep.auto
-                ? "bg-card border border-yellow-500/20"
-                : isMyTurn
-                  ? currentStep.action === "ban"
-                    ? "bg-card border border-red-500/25"
-                    : "bg-card border border-green-500/25"
-                  : "bg-card border border-border"
-            }`}
-          >
-            {currentStep.auto ? (
-              <p className="text-sm font-semibold text-yellow-400 animate-pulse">
-                Randomising{" "}
-                {currentStep.target === "civ" ? "civilization" : "map"}...
-              </p>
-            ) : isMyTurn ? (
-              <>
-                <p className="text-lg font-bold mb-0.5">
-                  {currentStep.action === "ban" ? "Ban" : "Pick"} a{" "}
-                  {currentStep.target === "civ" ? "Civilization" : "Map"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Your turn — select from below
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Waiting for{" "}
-                <span
-                  className={`font-semibold ${currentStep.team === "team1" ? "text-blue-400" : "text-red-400"}`}
-                >
-                  {getStepActorName(draftState.config, currentStep)}
-                </span>{" "}
-                to {currentStep.action} a{" "}
-                {currentStep.target === "civ" ? "civilization" : "map"}...
-              </p>
-            )}
-          </div>
-        )}
+        {/* Turn Banner — hidden ban phase or normal */}
+        {!draftState.completed &&
+          currentStep &&
+          (() => {
+            const phase = draftState.hiddenBanPhase;
+            if (phase) {
+              const myTeamKey = getTeamFromRole(role) as TeamKey | null;
+              const myDone = myTeamKey
+                ? hasTeamCompletedHiddenBans(draftState, myTeamKey)
+                : false;
+              const remaining = myTeamKey
+                ? getRemainingHiddenBans(draftState, myTeamKey)
+                : 0;
+              const targetLabel =
+                phase.target === "civ" ? "civilization" : "map";
+
+              return (
+                <div className="mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border border-orange-500/25">
+                  <p className="text-xs uppercase tracking-widest text-orange-400/60 font-semibold mb-1">
+                    Simultaneous Hidden Bans
+                  </p>
+                  {role === "spectator" ? (
+                    <p className="text-sm text-muted-foreground">
+                      Both teams are secretly banning {targetLabel}s...
+                    </p>
+                  ) : myDone ? (
+                    <p className="text-sm text-muted-foreground">
+                      <CheckCircle2 className="w-4 h-4 inline-block mr-1 text-green-400" />
+                      Your bans are locked in — waiting for opponent...
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-lg font-bold mb-0.5">
+                        Ban {remaining} {targetLabel}
+                        {remaining !== 1 ? "s" : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Your opponent cannot see your bans until both sides
+                        finish
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div
+                className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in ${
+                  currentStep.auto
+                    ? "bg-card border border-yellow-500/20"
+                    : isMyTurn
+                      ? currentStep.action === "ban"
+                        ? "bg-card border border-red-500/25"
+                        : "bg-card border border-green-500/25"
+                      : "bg-card border border-border"
+                }`}
+              >
+                {currentStep.auto ? (
+                  <p className="text-sm font-semibold text-yellow-400 animate-pulse">
+                    Randomising{" "}
+                    {currentStep.target === "civ" ? "civilization" : "map"}...
+                  </p>
+                ) : isMyTurn ? (
+                  <>
+                    <p className="text-lg font-bold mb-0.5">
+                      {currentStep.action === "ban" ? "Ban" : "Pick"} a{" "}
+                      {currentStep.target === "civ" ? "Civilization" : "Map"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Your turn — select from below
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Waiting for{" "}
+                    <span
+                      className={`font-semibold ${currentStep.team === "team1" ? "text-blue-400" : "text-red-400"}`}
+                    >
+                      {getStepActorName(draftState.config, currentStep)}
+                    </span>{" "}
+                    to {currentStep.action} a{" "}
+                    {currentStep.target === "civ" ? "civilization" : "map"}...
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
         {draftState.completed && (
           <div className="mb-5 rounded-xl px-5 py-4 bg-card border border-green-500/20 text-center">
@@ -644,112 +1051,240 @@ function DraftContent() {
           />
         </div>
 
-        {/* Selection Area — only shown when it's your turn */}
-        {!draftState.completed && currentStep && canInteract && (
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
-              {currentStep.target === "civ" ? "Civilizations" : "Maps"}
-            </p>
-            {currentStep.target === "civ" ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-                {config.civPool.map((civId) => {
-                  const civName = getCivName(civId);
-                  const civFlag = getCivFlag(civId);
-                  const isAvailable = availableCivSet.has(civId);
-                  const isBannedByAny =
-                    draftState.team1.civBans.includes(civId) ||
-                    draftState.team2.civBans.includes(civId);
-                  // In per-team mode, only show as banned if it's actually unavailable
-                  const isBanned = isBannedByAny && !isAvailable;
-                  const isPickedT1 = draftState.team1.civPicks.includes(civId);
-                  const isPickedT2 = draftState.team2.civPicks.includes(civId);
-                  const clickable = isAvailable && canInteract;
+        {/* Hidden Ban Selection Area — shown during simultaneous ban phase */}
+        {!draftState.completed &&
+          draftState.hiddenBanPhase &&
+          role !== "spectator" &&
+          (() => {
+            const phase = draftState.hiddenBanPhase!;
+            const myTeamKey = getTeamFromRole(role) as TeamKey;
+            if (!myTeamKey) return null;
+            if (hasTeamCompletedHiddenBans(draftState, myTeamKey)) return null;
 
-                  return (
-                    <button
-                      key={civId}
-                      onClick={() => clickable && handleSelect(civId)}
-                      disabled={!clickable}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
-                        clickable
-                          ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
-                          : isBanned
-                            ? "bg-card/40 ring-1 ring-red-500/10"
-                            : isPickedT1 || isPickedT2
-                              ? "bg-card/40 ring-1 ring-border/30"
-                              : "bg-card/30 ring-1 ring-border/20"
-                      }`}
-                    >
-                      {civFlag && (
-                        <Image
-                          src={civFlag}
-                          alt={civName}
-                          width={96}
-                          height={96}
-                          className={`w-12 h-12 rounded-full object-cover shrink-0 ${
-                            isBanned
-                              ? "grayscale opacity-40 ring-2 ring-red-500/20"
-                              : isPickedT1 || isPickedT2
-                                ? "opacity-50 ring-2 ring-border/50"
-                                : !clickable
-                                  ? "opacity-30 ring-2 ring-border/30"
-                                  : "ring-2 ring-border"
-                          }`}
-                        />
-                      )}
-                      <p
-                        className={`text-xs font-medium truncate w-full ${isBanned ? "text-muted-foreground/40" : ""}`}
-                      >
-                        {civName}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                {config.mapPool.map((mapId) => {
-                  const mapName = getMapName(mapId);
-                  const isAvailable = availableMapSet.has(mapId);
-                  const isBannedByAny =
-                    draftState.team1.mapBans.includes(mapId) ||
-                    draftState.team2.mapBans.includes(mapId);
-                  const isBanned = isBannedByAny && !isAvailable;
-                  const isPickedT1 = draftState.team1.mapPicks.includes(mapId);
-                  const isPickedT2 = draftState.team2.mapPicks.includes(mapId);
-                  const clickable = isAvailable && canInteract;
+            const available = new Set(
+              getAvailableForHiddenBan(draftState, myTeamKey),
+            );
+            const myBans =
+              myTeamKey === "team1" ? phase.team1Bans : phase.team2Bans;
+            const targetLabel =
+              phase.target === "civ" ? "Civilizations" : "Maps";
 
-                  return (
-                    <button
-                      key={mapId}
-                      onClick={() => clickable && handleSelect(mapId)}
-                      disabled={!clickable}
-                      className={`p-3 rounded-xl text-left transition-all ${
-                        clickable
-                          ? currentStep.action === "ban"
-                            ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
-                            : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
-                          : isBanned
-                            ? "bg-card/40 ring-1 ring-red-500/10"
-                            : isPickedT1 || isPickedT2
-                              ? "bg-card/40 ring-1 ring-border/30"
-                              : "bg-card/30 ring-1 ring-border/20"
-                      }`}
-                    >
+            return (
+              <div>
+                {myBans.length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-2 items-center">
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold">
+                      Your hidden bans:
+                    </span>
+                    {myBans.map((id, i) => (
                       <span
-                        className={`text-xs font-medium truncate block ${isBanned ? "text-muted-foreground/40" : ""}`}
+                        key={i}
+                        className="px-2.5 py-1 rounded-lg bg-red-500/10 ring-1 ring-red-500/20 text-xs font-medium text-red-400"
                       >
-                        {mapName}
+                        {phase.target === "civ"
+                          ? getCivName(id)
+                          : getMapName(id)}
                       </span>
-                    </button>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
+                  {targetLabel}
+                </p>
+                {phase.target === "civ" ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                    {config.civPool.map((civId) => {
+                      const civName = getCivName(civId);
+                      const civFlag = getCivFlag(civId);
+                      const isAvail = available.has(civId);
+                      const alreadyBanned = myBans.includes(civId);
+                      const clickable = isAvail && !alreadyBanned;
+
+                      return (
+                        <button
+                          key={civId}
+                          onClick={() => clickable && handleHiddenBan(civId)}
+                          disabled={!clickable}
+                          className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
+                            alreadyBanned
+                              ? "bg-red-500/10 ring-1 ring-red-500/30"
+                              : clickable
+                                ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                : "bg-card/30 ring-1 ring-border/20"
+                          }`}
+                        >
+                          {civFlag && (
+                            <Image
+                              src={civFlag}
+                              alt={civName}
+                              width={96}
+                              height={96}
+                              className={`w-12 h-12 rounded-full object-cover shrink-0 ${
+                                alreadyBanned
+                                  ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                  : !clickable
+                                    ? "opacity-30 ring-2 ring-border/30"
+                                    : "ring-2 ring-border"
+                              }`}
+                            />
+                          )}
+                          <p
+                            className={`text-xs font-medium truncate w-full ${alreadyBanned ? "text-red-400/60" : !clickable ? "text-muted-foreground/40" : ""}`}
+                          >
+                            {civName}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                    {config.mapPool.map((mapId) => {
+                      const mapName = getMapName(mapId);
+                      const isAvail = available.has(mapId);
+                      const alreadyBanned = myBans.includes(mapId);
+                      const clickable = isAvail && !alreadyBanned;
+
+                      return (
+                        <button
+                          key={mapId}
+                          onClick={() => clickable && handleHiddenBan(mapId)}
+                          disabled={!clickable}
+                          className={`p-3 rounded-xl text-left transition-all ${
+                            alreadyBanned
+                              ? "bg-red-500/10 ring-1 ring-red-500/30"
+                              : clickable
+                                ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                : "bg-card/30 ring-1 ring-border/20"
+                          }`}
+                        >
+                          <span
+                            className={`text-xs font-medium truncate block ${alreadyBanned ? "text-red-400/60" : !clickable ? "text-muted-foreground/40" : ""}`}
+                          >
+                            {mapName}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            );
+          })()}
+
+        {/* Selection Area — only shown when it's your turn (normal non-hidden steps) */}
+        {!draftState.completed &&
+          currentStep &&
+          canInteract &&
+          !draftState.hiddenBanPhase && (
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
+                {currentStep.target === "civ" ? "Civilizations" : "Maps"}
+              </p>
+              {currentStep.target === "civ" ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                  {config.civPool.map((civId) => {
+                    const civName = getCivName(civId);
+                    const civFlag = getCivFlag(civId);
+                    const isAvailable = availableCivSet.has(civId);
+                    const isBannedByAny =
+                      draftState.team1.civBans.includes(civId) ||
+                      draftState.team2.civBans.includes(civId);
+                    // In per-team mode, only show as banned if it's actually unavailable
+                    const isBanned = isBannedByAny && !isAvailable;
+                    const isPickedT1 =
+                      draftState.team1.civPicks.includes(civId);
+                    const isPickedT2 =
+                      draftState.team2.civPicks.includes(civId);
+                    const clickable = isAvailable && canInteract;
+
+                    return (
+                      <button
+                        key={civId}
+                        onClick={() => clickable && handleSelect(civId)}
+                        disabled={!clickable}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
+                          clickable
+                            ? currentStep.action === "ban"
+                              ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                              : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
+                            : isBanned
+                              ? "bg-card/40 ring-1 ring-red-500/10"
+                              : isPickedT1 || isPickedT2
+                                ? "bg-card/40 ring-1 ring-border/30"
+                                : "bg-card/30 ring-1 ring-border/20"
+                        }`}
+                      >
+                        {civFlag && (
+                          <Image
+                            src={civFlag}
+                            alt={civName}
+                            width={96}
+                            height={96}
+                            className={`w-12 h-12 rounded-full object-cover shrink-0 ${
+                              isBanned
+                                ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                : isPickedT1 || isPickedT2
+                                  ? "opacity-50 ring-2 ring-border/50"
+                                  : !clickable
+                                    ? "opacity-30 ring-2 ring-border/30"
+                                    : "ring-2 ring-border"
+                            }`}
+                          />
+                        )}
+                        <p
+                          className={`text-xs font-medium truncate w-full ${isBanned ? "text-muted-foreground/40" : ""}`}
+                        >
+                          {civName}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                  {config.mapPool.map((mapId) => {
+                    const mapName = getMapName(mapId);
+                    const isAvailable = availableMapSet.has(mapId);
+                    const isBannedByAny =
+                      draftState.team1.mapBans.includes(mapId) ||
+                      draftState.team2.mapBans.includes(mapId);
+                    const isBanned = isBannedByAny && !isAvailable;
+                    const isPickedT1 =
+                      draftState.team1.mapPicks.includes(mapId);
+                    const isPickedT2 =
+                      draftState.team2.mapPicks.includes(mapId);
+                    const clickable = isAvailable && canInteract;
+
+                    return (
+                      <button
+                        key={mapId}
+                        onClick={() => clickable && handleSelect(mapId)}
+                        disabled={!clickable}
+                        className={`p-3 rounded-xl text-left transition-all ${
+                          clickable
+                            ? currentStep.action === "ban"
+                              ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                              : "bg-card ring-1 ring-border hover:ring-green-500/40 hover:scale-[1.02] cursor-pointer"
+                            : isBanned
+                              ? "bg-card/40 ring-1 ring-red-500/10"
+                              : isPickedT1 || isPickedT2
+                                ? "bg-card/40 ring-1 ring-border/30"
+                                : "bg-card/30 ring-1 ring-border/20"
+                        }`}
+                      >
+                        <span
+                          className={`text-xs font-medium truncate block ${isBanned ? "text-muted-foreground/40" : ""}`}
+                        >
+                          {mapName}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Controls — hidden for spectators */}
         {/* Footer with seed */}

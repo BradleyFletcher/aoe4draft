@@ -21,6 +21,17 @@ export interface DraftStep {
   team: TeamKey;
   playerIndex?: number; // which player on the team (0-based). undefined = team-level (bans, map picks)
   auto?: boolean; // if true, this step is resolved automatically with a random pick from the available pool
+  hidden?: boolean; // if true, this ban is part of a simultaneous hidden ban phase
+}
+
+// Tracks a simultaneous hidden ban phase where both teams ban at the same time
+export interface HiddenBanPhase {
+  startIndex: number; // index of first step in this phase
+  team1Bans: string[]; // bans submitted by team1 (hidden from team2)
+  team2Bans: string[]; // bans submitted by team2 (hidden from team1)
+  team1Count: number; // how many bans team1 needs to submit
+  team2Count: number; // how many bans team2 needs to submit
+  target: DraftActionTarget; // civ or map
 }
 
 export interface TeamPlayer {
@@ -54,6 +65,8 @@ export interface DraftState {
   team1: TeamDraftData;
   team2: TeamDraftData;
   completed: boolean;
+  readyPlayers?: Record<string, boolean>;
+  hiddenBanPhase?: HiddenBanPhase | null; // active hidden ban phase, null when not in one
 }
 
 export function generateSeed(): string {
@@ -135,6 +148,8 @@ export function validateDraftConfig(obj: unknown): DraftConfig | null {
         s.playerIndex >= (c.teamSize as number))
     )
       return null;
+    if (s.hidden !== undefined && typeof s.hidden !== "boolean") return null;
+    if (s.auto !== undefined && typeof s.auto !== "boolean") return null;
   }
 
   if (typeof c.team1Name !== "string" || typeof c.team2Name !== "string")
@@ -163,7 +178,30 @@ export function createInitialDraftState(config: DraftConfig): DraftState {
     team1: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
     team2: { civBans: [], civPicks: [], mapBans: [], mapPicks: [] },
     completed: false,
+    readyPlayers: {},
   };
+}
+
+export function getRequiredRoles(config: DraftConfig): string[] {
+  const roles: string[] = [];
+  for (let i = 0; i < config.teamSize; i++) {
+    roles.push(`team1_p${i}`);
+    roles.push(`team2_p${i}`);
+  }
+  return roles;
+}
+
+export function isAllReady(state: DraftState): boolean {
+  const required = getRequiredRoles(state.config);
+  if (!state.readyPlayers) return false;
+  return required.every((role) => state.readyPlayers?.[role] === true);
+}
+
+export function setPlayerReady(state: DraftState, role: string): DraftState {
+  const newState = structuredClone(state);
+  if (!newState.readyPlayers) newState.readyPlayers = {};
+  newState.readyPlayers[role] = true;
+  return newState;
 }
 
 export function getCurrentStep(state: DraftState): DraftStep | null {
@@ -303,6 +341,209 @@ export function resolveAutoStep(state: DraftState): DraftState {
   return applyAction(state, randomId);
 }
 
+// Detect the hidden ban phase starting at a given step index.
+// A hidden phase is a contiguous run of hidden ban steps (same target, same action=ban).
+export function detectHiddenBanPhase(
+  config: DraftConfig,
+  startIndex: number,
+): HiddenBanPhase | null {
+  const step = config.steps[startIndex];
+  if (!step?.hidden || step.action !== "ban") return null;
+
+  let team1Count = 0;
+  let team2Count = 0;
+  const target = step.target;
+
+  for (let i = startIndex; i < config.steps.length; i++) {
+    const s = config.steps[i];
+    if (!s.hidden || s.action !== "ban" || s.target !== target) break;
+    if (s.team === "team1") team1Count++;
+    else team2Count++;
+  }
+
+  if (team1Count === 0 || team2Count === 0) return null;
+
+  return {
+    startIndex,
+    team1Bans: [],
+    team2Bans: [],
+    team1Count,
+    team2Count,
+    target,
+  };
+}
+
+// Check if the current step is a hidden ban phase that needs initialisation
+export function isHiddenBanStep(state: DraftState): boolean {
+  const step = getCurrentStep(state);
+  return !!step?.hidden && step.action === "ban";
+}
+
+// Get or initialise the active hidden ban phase
+export function getOrInitHiddenPhase(state: DraftState): DraftState {
+  if (state.hiddenBanPhase) return state;
+  const phase = detectHiddenBanPhase(state.config, state.currentStepIndex);
+  if (!phase) return state;
+  const newState = structuredClone(state);
+  newState.hiddenBanPhase = phase;
+  return newState;
+}
+
+// Apply a hidden ban for a specific team
+export function applyHiddenBan(
+  state: DraftState,
+  team: TeamKey,
+  itemId: string,
+): DraftState {
+  if (!state.hiddenBanPhase) return state;
+  const phase = state.hiddenBanPhase;
+
+  const newState = structuredClone(state);
+  const newPhase = { ...newState.hiddenBanPhase! };
+
+  if (team === "team1") {
+    if (newPhase.team1Bans.length >= newPhase.team1Count) return state;
+    newPhase.team1Bans = [...newPhase.team1Bans, itemId];
+  } else {
+    if (newPhase.team2Bans.length >= newPhase.team2Count) return state;
+    newPhase.team2Bans = [...newPhase.team2Bans, itemId];
+  }
+
+  newState.hiddenBanPhase = newPhase;
+
+  // Check if both teams have completed their bans — if so, reveal
+  if (
+    newPhase.team1Bans.length >= newPhase.team1Count &&
+    newPhase.team2Bans.length >= newPhase.team2Count
+  ) {
+    return revealHiddenBans(newState);
+  }
+
+  return newState;
+}
+
+// Reveal hidden bans: move them into the regular team data arrays and advance the step index
+function revealHiddenBans(state: DraftState): DraftState {
+  const phase = state.hiddenBanPhase;
+  if (!phase) return state;
+
+  const newState = structuredClone(state);
+  const target = phase.target;
+
+  // Push bans into team data in step order
+  const totalSteps = phase.team1Count + phase.team2Count;
+  let t1Idx = 0;
+  let t2Idx = 0;
+  for (let i = 0; i < totalSteps; i++) {
+    const step = newState.config.steps[phase.startIndex + i];
+    if (!step) break;
+    const teamData = step.team === "team1" ? newState.team1 : newState.team2;
+    const bans = step.team === "team1" ? phase.team1Bans : phase.team2Bans;
+    const idx = step.team === "team1" ? t1Idx++ : t2Idx++;
+    const banId = bans[idx];
+    if (banId) {
+      if (target === "civ") {
+        teamData.civBans.push(banId);
+      } else {
+        teamData.mapBans.push(banId);
+      }
+    }
+  }
+
+  newState.currentStepIndex = phase.startIndex + totalSteps;
+  newState.hiddenBanPhase = null;
+
+  if (newState.currentStepIndex >= newState.config.steps.length) {
+    newState.completed = true;
+  }
+
+  return newState;
+}
+
+// Check if a team has completed their hidden bans for the current phase
+export function hasTeamCompletedHiddenBans(
+  state: DraftState,
+  team: TeamKey,
+): boolean {
+  const phase = state.hiddenBanPhase;
+  if (!phase) return false;
+  if (team === "team1") return phase.team1Bans.length >= phase.team1Count;
+  return phase.team2Bans.length >= phase.team2Count;
+}
+
+// Get how many hidden bans a team still needs to submit
+export function getRemainingHiddenBans(
+  state: DraftState,
+  team: TeamKey,
+): number {
+  const phase = state.hiddenBanPhase;
+  if (!phase) return 0;
+  if (team === "team1") return phase.team1Count - phase.team1Bans.length;
+  return phase.team2Count - phase.team2Bans.length;
+}
+
+// Get available items for hidden banning (excludes own hidden bans already submitted)
+export function getAvailableForHiddenBan(
+  state: DraftState,
+  team: TeamKey,
+): string[] {
+  const phase = state.hiddenBanPhase;
+  if (!phase) return [];
+
+  const myHiddenBans = new Set(
+    team === "team1" ? phase.team1Bans : phase.team2Bans,
+  );
+
+  if (phase.target === "civ") {
+    const allPicked = new Set([
+      ...state.team1.civPicks,
+      ...state.team2.civPicks,
+    ]);
+    const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
+    return state.config.civPool.filter(
+      (id) => !allPicked.has(id) && !allBanned.has(id) && !myHiddenBans.has(id),
+    );
+  } else {
+    const allPicked = new Set([
+      ...state.team1.mapPicks,
+      ...state.team2.mapPicks,
+    ]);
+    const allBanned = new Set([...state.team1.mapBans, ...state.team2.mapBans]);
+    return state.config.mapPool.filter(
+      (id) => !allPicked.has(id) && !allBanned.has(id) && !myHiddenBans.has(id),
+    );
+  }
+}
+
+// Redact hidden bans from the state for a specific viewer role.
+// The opponent's actual ban IDs are replaced with "__hidden__" placeholders so
+// the array length (and thus hasTeamCompletedHiddenBans) is preserved, but the
+// content is hidden.
+export function redactHiddenBans(
+  state: DraftState,
+  viewerRole: string,
+): DraftState {
+  if (!state.hiddenBanPhase) return state;
+
+  const viewerTeam = getTeamFromRole(viewerRole);
+  const newState = structuredClone(state);
+  const phase = newState.hiddenBanPhase!;
+
+  const redact = (bans: string[]) => bans.map(() => "__hidden__");
+
+  if (viewerTeam === "team1") {
+    phase.team2Bans = redact(phase.team2Bans);
+  } else if (viewerTeam === "team2") {
+    phase.team1Bans = redact(phase.team1Bans);
+  } else {
+    // Spectators see counts but not content
+    phase.team1Bans = redact(phase.team1Bans);
+    phase.team2Bans = redact(phase.team2Bans);
+  }
+
+  return newState;
+}
+
 export function applyAction(state: DraftState, itemId: string): DraftState {
   const step = getCurrentStep(state);
   if (!step) return state;
@@ -370,10 +611,17 @@ export function getTeamFromRole(role: string): TeamKey | null {
   return null;
 }
 
+export interface PresetGenerateOptions {
+  hiddenBans?: boolean;
+}
+
 export interface PresetDraftFormat {
   label: string;
   description: string;
-  generate: (teamSize: TeamSize) => DraftStep[];
+  generate: (
+    teamSize: TeamSize,
+    options?: PresetGenerateOptions,
+  ) => DraftStep[];
 }
 
 function generateCivPicks(
@@ -404,85 +652,102 @@ export const PRESET_DRAFT_FORMATS: Record<string, PresetDraftFormat> = {
   default: {
     label: "Default",
     description:
-      "2 civ bans/team, 3 civ picks/player, 1 map ban/team, 3 maps (last random)",
-    generate: (teamSize) => {
+      "1 map ban/team, 3 maps (last random), 2 civ bans/team, 3 civ picks/player",
+    generate: (teamSize, options) => {
+      const h = options?.hiddenBans ? true : undefined;
       const steps: DraftStep[] = [];
-      // 2 civ bans per team
-      for (let i = 0; i < 2; i++) {
-        steps.push({ action: "ban", target: "civ", team: "team1" });
-        steps.push({ action: "ban", target: "civ", team: "team2" });
-      }
-      // 3 civ picks per player
-      steps.push(...generateCivPicks(teamSize, 3));
       // 1 map ban per team
-      steps.push({ action: "ban", target: "map", team: "team1" });
-      steps.push({ action: "ban", target: "map", team: "team2" });
+      steps.push({ action: "ban", target: "map", team: "team1", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team2", hidden: h });
       // 3 map picks (T1, T2, random)
       steps.push({ action: "pick", target: "map", team: "team1" });
       steps.push({ action: "pick", target: "map", team: "team2" });
       steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      // 2 civ bans per team
+      for (let i = 0; i < 2; i++) {
+        steps.push({ action: "ban", target: "civ", team: "team1", hidden: h });
+        steps.push({ action: "ban", target: "civ", team: "team2", hidden: h });
+      }
+      // 3 civ picks per player
+      steps.push(...generateCivPicks(teamSize, 3));
       return steps;
     },
   },
   bans: {
     label: "Bans",
-    description: "Civ bans, 1 civ pick/player, map bans, 1 map pick",
-    generate: (teamSize) => {
+    description:
+      "2 map bans/team, 1 map pick (random), civ bans, 1 civ pick/player",
+    generate: (teamSize, options) => {
+      const h = options?.hiddenBans ? true : undefined;
       const steps: DraftStep[] = [];
+      // 2 map bans per team
+      steps.push({ action: "ban", target: "map", team: "team1", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team2", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team1", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team2", hidden: h });
+      // 1 map pick (random)
+      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      // Civ bans
       const civBansPerTeam = teamSize === 1 ? 3 : 2;
       for (let i = 0; i < civBansPerTeam; i++) {
-        steps.push({ action: "ban", target: "civ", team: "team1" });
-        steps.push({ action: "ban", target: "civ", team: "team2" });
+        steps.push({ action: "ban", target: "civ", team: "team1", hidden: h });
+        steps.push({ action: "ban", target: "civ", team: "team2", hidden: h });
       }
+      // 1 civ pick per player
       steps.push(...generateCivPicks(teamSize, 1));
-      steps.push({ action: "ban", target: "map", team: "team1" });
-      steps.push({ action: "ban", target: "map", team: "team2" });
-      steps.push({ action: "ban", target: "map", team: "team1" });
-      steps.push({ action: "ban", target: "map", team: "team2" });
-      steps.push({ action: "pick", target: "map", team: "team1", auto: true });
       return steps;
     },
   },
   "no-bans": {
     label: "No Bans",
-    description: "1 civ pick/player, 1 map pick",
+    description: "1 map pick (random), 1 civ pick/player",
     generate: (teamSize) => {
       const steps: DraftStep[] = [];
-      steps.push(...generateCivPicks(teamSize, 1));
+      // 1 map pick (random)
       steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      // 1 civ pick per player
+      steps.push(...generateCivPicks(teamSize, 1));
       return steps;
     },
   },
   "bo3-bans": {
     label: "BO3 Bans",
-    description: "Civ bans, 3 civ picks/player, map bans, 3 map picks",
-    generate: (teamSize) => {
+    description:
+      "2 map bans/team, 3 map picks (last random), civ bans, 3 civ picks/player",
+    generate: (teamSize, options) => {
+      const h = options?.hiddenBans ? true : undefined;
       const steps: DraftStep[] = [];
-      const civBansPerTeam = teamSize === 1 ? 3 : 2;
-      for (let i = 0; i < civBansPerTeam; i++) {
-        steps.push({ action: "ban", target: "civ", team: "team1" });
-        steps.push({ action: "ban", target: "civ", team: "team2" });
-      }
-      steps.push(...generateCivPicks(teamSize, 3));
-      steps.push({ action: "ban", target: "map", team: "team1" });
-      steps.push({ action: "ban", target: "map", team: "team2" });
-      steps.push({ action: "ban", target: "map", team: "team1" });
-      steps.push({ action: "ban", target: "map", team: "team2" });
+      // 2 map bans per team
+      steps.push({ action: "ban", target: "map", team: "team1", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team2", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team1", hidden: h });
+      steps.push({ action: "ban", target: "map", team: "team2", hidden: h });
+      // 3 map picks (T1, T2, random)
       steps.push({ action: "pick", target: "map", team: "team1" });
       steps.push({ action: "pick", target: "map", team: "team2" });
       steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      // Civ bans
+      const civBansPerTeam = teamSize === 1 ? 3 : 2;
+      for (let i = 0; i < civBansPerTeam; i++) {
+        steps.push({ action: "ban", target: "civ", team: "team1", hidden: h });
+        steps.push({ action: "ban", target: "civ", team: "team2", hidden: h });
+      }
+      // 3 civ picks per player
+      steps.push(...generateCivPicks(teamSize, 3));
       return steps;
     },
   },
   "bo3-no-bans": {
     label: "BO3 No Bans",
-    description: "3 civ picks/player, 3 map picks",
+    description: "3 map picks (last random), 3 civ picks/player",
     generate: (teamSize) => {
       const steps: DraftStep[] = [];
-      steps.push(...generateCivPicks(teamSize, 3));
+      // 3 map picks (T1, T2, random)
       steps.push({ action: "pick", target: "map", team: "team1" });
       steps.push({ action: "pick", target: "map", team: "team2" });
       steps.push({ action: "pick", target: "map", team: "team1", auto: true });
+      // 3 civ picks per player
+      steps.push(...generateCivPicks(teamSize, 3));
       return steps;
     },
   },

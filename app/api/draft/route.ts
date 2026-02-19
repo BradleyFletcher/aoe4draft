@@ -6,7 +6,8 @@ import {
   isValidSeed,
   cleanupOldDrafts,
 } from "@/lib/storage";
-import { validateDraftConfig } from "@/lib/draft";
+import { validateDraftConfig, redactHiddenBans } from "@/lib/draft";
+import { publish } from "@/lib/draft-events";
 
 // Simple in-memory rate limiter: max 600 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -77,6 +78,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ exists: false });
   }
 
+  // Redact hidden bans based on the viewer's role
+  const role = req.nextUrl.searchParams.get("role") ?? "spectator";
+  if (data.state?.hiddenBanPhase) {
+    data.state = redactHiddenBans(data.state, role);
+  }
+
   return NextResponse.json({ exists: true, ...data });
 }
 
@@ -117,6 +124,9 @@ export async function POST(req: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+
+    // Notify all SSE clients watching this draft
+    publish(seed, result.version);
 
     return NextResponse.json({ ok: true, version: result.version });
   } catch {

@@ -214,6 +214,55 @@ export async function writeDraft(
   });
 }
 
+// Atomic read-modify-write: reads the current state, applies a mutation function,
+// and writes the result — all inside the per-seed write lock.
+export async function modifyDraft(
+  seed: string,
+  mutate: (record: DraftRecord) => DraftState,
+): Promise<{ ok: boolean; version: number; error?: string }> {
+  if (!isValidSeed(seed)) {
+    return { ok: false, version: 0, error: "Invalid seed format" };
+  }
+
+  return withWriteLock(seed, async () => {
+    const existing = await readDraft(seed);
+    if (!existing) {
+      return { ok: false, version: 0, error: "Draft not found" };
+    }
+
+    const newState = mutate(existing);
+    const newVersion = (existing.version ?? 0) + 1;
+    const data = JSON.parse(
+      JSON.stringify({
+        state: newState,
+        history: existing.history,
+        version: newVersion,
+        createdAt: existing.createdAt,
+        updatedAt: Date.now(),
+      }),
+    );
+
+    if (USE_FIRESTORE && db) {
+      try {
+        await db.collection(FIRESTORE_COLLECTION).doc(seed).set(data);
+        return { ok: true, version: newVersion };
+      } catch (err: any) {
+        return {
+          ok: false,
+          version: 0,
+          error: "Firestore error: " + (err?.message || "unknown"),
+        };
+      }
+    } else {
+      const shardDir = getShardDir(seed);
+      ensureDir(shardDir);
+      const filePath = getFilePath(seed);
+      await fs.writeFile(filePath, JSON.stringify(data));
+      return { ok: true, version: newVersion };
+    }
+  });
+}
+
 export async function deleteDraft(seed: string): Promise<boolean> {
   if (!isValidSeed(seed)) return false;
 
