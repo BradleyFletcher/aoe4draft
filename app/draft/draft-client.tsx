@@ -198,18 +198,17 @@ function DraftContent() {
     });
   }, [searchParams]);
 
-  // Real-time updates via SSE, with polling fallback.
-  // Uses roleRef to avoid stale closures — the SSE connection doesn't need to
-  // reconnect when role changes, it just needs the latest role when fetching.
+  // Real-time updates: polling baseline + optional SSE accelerator.
+  // Polling always runs (every 2s) because in-memory pub/sub doesn't work
+  // across serverless function instances (Vercel). SSE is kept as an
+  // optimization for local dev / long-lived server processes.
   useEffect(() => {
     if (!seed || draftState?.completed) return;
 
     let cancelled = false;
-    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
     let fetchInFlight = false;
 
     const fetchLatest = async () => {
-      // Only skip if we are actively saving (our own write is in flight)
       if (isSavingRef.current || fetchInFlight) return;
       fetchInFlight = true;
       try {
@@ -224,33 +223,39 @@ function DraftContent() {
       }
     };
 
-    // Try SSE first
-    const url = `/api/draft/stream?seed=${encodeURIComponent(seed)}`;
-    const es = new EventSource(url);
+    // Always poll as the reliable baseline
+    const pollInterval = setInterval(fetchLatest, 2000);
 
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.version && data.version > versionRef.current) {
-          fetchLatest();
+    // Also try SSE for faster updates (works in local dev / single-process)
+    let es: EventSource | null = null;
+    try {
+      const url = `/api/draft/stream?seed=${encodeURIComponent(seed)}`;
+      es = new EventSource(url);
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.version && data.version > versionRef.current) {
+            fetchLatest();
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore parse errors
-      }
-    };
+      };
 
-    es.onerror = () => {
-      // SSE failed — fall back to polling
-      es.close();
-      if (!cancelled && !fallbackInterval) {
-        fallbackInterval = setInterval(fetchLatest, 3000);
-      }
-    };
+      es.onerror = () => {
+        // SSE failed — close it; polling continues regardless
+        es?.close();
+        es = null;
+      };
+    } catch {
+      // SSE not available — polling continues
+    }
 
     return () => {
       cancelled = true;
-      es.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
+      clearInterval(pollInterval);
+      es?.close();
     };
   }, [seed, draftState?.completed]);
 
@@ -464,6 +469,8 @@ function DraftContent() {
     if (!draftState) return;
     const currentStep = getCurrentStep(draftState);
     if (!currentStep) return;
+    // Block normal selection for hidden ban steps — must use hidden ban flow
+    if (currentStep.hidden) return;
 
     if (role === "spectator") return;
 
@@ -909,6 +916,20 @@ function DraftContent() {
               );
             }
 
+            // Hidden step but phase not yet initialised — show loading
+            if (currentStep.hidden) {
+              return (
+                <div className="mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border border-orange-500/25">
+                  <p className="text-xs uppercase tracking-widest text-orange-400/60 font-semibold mb-1">
+                    Simultaneous Hidden Bans
+                  </p>
+                  <p className="text-sm text-muted-foreground animate-pulse">
+                    Preparing hidden ban phase...
+                  </p>
+                </div>
+              );
+            }
+
             return (
               <div
                 className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in ${
@@ -1207,7 +1228,8 @@ function DraftContent() {
         {!draftState.completed &&
           currentStep &&
           canInteract &&
-          !draftState.hiddenBanPhase && (
+          !draftState.hiddenBanPhase &&
+          !currentStep.hidden && (
             <div>
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
                 {currentStep.target === "civ" ? "Civilizations" : "Maps"}
