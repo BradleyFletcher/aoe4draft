@@ -7,6 +7,7 @@ import {
   getCivName,
   getCivFlag,
   getMapName,
+  getMapImage,
 } from "@/lib/draft";
 import { Shield, Map as MapIcon } from "lucide-react";
 import Image from "next/image";
@@ -213,19 +214,39 @@ export default function TeamPanel({
             {Array.from({ length: mapPickSteps.length }).map((_, i) => {
               const id = teamData.mapPicks[i];
               const filled = !!id;
+              const mapImg = filled ? getMapImage(id) : undefined;
               return (
-                <span
+                <div
                   key={i}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-all ${
                     filled
                       ? isT1
                         ? "bg-blue-500/5 ring-1 ring-blue-500/15 animate-draft-reveal"
                         : "bg-red-500/5 ring-1 ring-red-500/15 animate-draft-reveal"
-                      : "ring-1 ring-border/15 text-muted-foreground/25"
+                      : "ring-1 ring-border/15"
                   }`}
                 >
-                  {filled ? getMapName(id) : "—"}
-                </span>
+                  {filled && mapImg ? (
+                    <Image
+                      src={mapImg}
+                      alt={getMapName(id)}
+                      width={72}
+                      height={72}
+                      className="w-9 h-9 rounded object-cover shrink-0"
+                    />
+                  ) : !filled ? (
+                    <div className="w-9 h-9 rounded border border-dashed border-border/20 shrink-0 flex items-center justify-center">
+                      <span className="text-[8px] text-muted-foreground/20">
+                        ?
+                      </span>
+                    </div>
+                  ) : null}
+                  <span
+                    className={`text-xs font-medium ${!filled ? "text-muted-foreground/25" : ""}`}
+                  >
+                    {filled ? getMapName(id) : "—"}
+                  </span>
+                </div>
               );
             })}
           </div>
@@ -245,7 +266,11 @@ export default function TeamPanel({
             {allBans.map((ban, i) => {
               const filled = !!ban.id;
               const isCiv = ban.type === "civ";
-              const flag = filled && isCiv ? getCivFlag(ban.id!) : undefined;
+              const img = filled
+                ? isCiv
+                  ? getCivFlag(ban.id!)
+                  : getMapImage(ban.id!)
+                : undefined;
               const name = filled
                 ? isCiv
                   ? getCivName(ban.id!)
@@ -261,13 +286,13 @@ export default function TeamPanel({
                       : "ring-1 ring-border/10"
                   }`}
                 >
-                  {filled && flag ? (
+                  {filled && img ? (
                     <Image
-                      src={flag}
+                      src={img}
                       alt={name ?? ""}
                       width={48}
                       height={48}
-                      className="w-[18px] h-[18px] rounded-full object-cover shrink-0 grayscale opacity-40"
+                      className={`w-[18px] h-[18px] object-cover shrink-0 grayscale opacity-40 ${isCiv ? "rounded-full" : "rounded"}`}
                     />
                   ) : !filled ? (
                     <div className="w-[18px] h-[18px] rounded-full border border-dashed border-red-500/15 shrink-0" />

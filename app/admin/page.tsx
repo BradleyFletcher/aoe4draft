@@ -25,6 +25,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 const TEAM_SIZES: { value: TeamSize; label: string }[] = [
   { value: 1, label: "1v1" },
@@ -60,7 +61,7 @@ export default function AdminPage() {
   const [selectedMaps, setSelectedMaps] = useState<Set<string>>(
     new Set(maps.map((m) => m.id)),
   );
-  const [steps, setSteps] = useState<DraftStep[]>(
+  const [steps, setSteps] = useState<DraftStep[]>(() =>
     PRESET_DRAFT_FORMATS["default"].generate(1),
   );
   const [generatedSeed, setGeneratedSeed] = useState<string | null>(null);
@@ -91,7 +92,10 @@ export default function AdminPage() {
       setTeam1Name("Team 1");
       setTeam2Name("Team 2");
     }
-    setSteps(PRESET_DRAFT_FORMATS["default"].generate(size, { hiddenBans }));
+    const result = PRESET_DRAFT_FORMATS["default"].generate(size, {
+      hiddenBans,
+    });
+    setSteps(result);
     setGeneratedUrl(null);
     setGeneratedSeed(null);
     setGenerateError(null);
@@ -183,7 +187,8 @@ export default function AdminPage() {
   const loadPreset = (presetKey: string) => {
     const preset = PRESET_DRAFT_FORMATS[presetKey];
     if (preset) {
-      setSteps(preset.generate(teamSize, { hiddenBans }));
+      const result = preset.generate(teamSize, { hiddenBans });
+      setSteps(result);
       setGeneratedUrl(null);
       setGeneratedSeed(null);
       setGenerateError(null);
@@ -724,9 +729,24 @@ export default function AdminPage() {
                       <button
                         key={map.id}
                         onClick={() => toggleMap(map.id)}
-                        className={`p-2 rounded-lg text-left transition-all text-xs ${selectedMaps.has(map.id) ? "bg-accent border border-primary/30" : "opacity-35 hover:opacity-60 border border-transparent"}`}
+                        className={`flex flex-col items-center gap-1.5 p-2 rounded-lg text-center transition-all text-xs ${selectedMaps.has(map.id) ? "bg-accent border border-primary/30" : "opacity-35 hover:opacity-60 border border-transparent"}`}
                       >
-                        <span className="font-medium truncate block">
+                        {map.image ? (
+                          <Image
+                            src={map.image}
+                            alt={map.name}
+                            width={136}
+                            height={136}
+                            className="w-14 h-14 rounded-lg object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-secondary/40 flex items-center justify-center shrink-0">
+                            <span className="text-lg text-muted-foreground/30">
+                              🗺
+                            </span>
+                          </div>
+                        )}
+                        <span className="font-medium truncate block w-full">
                           {map.name}
                         </span>
                       </button>

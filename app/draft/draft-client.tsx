@@ -16,6 +16,7 @@ import {
   getCivName,
   getCivFlag,
   getMapName,
+  getMapImage,
   getStepActorName,
   getTeamFromRole,
   getTeamPlayers,
@@ -885,30 +886,51 @@ function DraftContent() {
                 : 0;
               const targetLabel =
                 phase.target === "civ" ? "civilization" : "map";
+              const actionLabel = phase.action === "ban" ? "Ban" : "Pick";
+              const actionLabelLower =
+                phase.action === "ban" ? "banning" : "picking";
+              const phaseTitle =
+                phase.action === "ban"
+                  ? "Simultaneous Hidden Bans"
+                  : "Simultaneous Hidden Picks";
+              const borderColor =
+                phase.action === "ban"
+                  ? "border-orange-500/25"
+                  : "border-blue-500/25";
+              const headerColor =
+                phase.action === "ban"
+                  ? "text-orange-400/60"
+                  : "text-blue-400/60";
 
               return (
-                <div className="mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border border-orange-500/25">
-                  <p className="text-xs uppercase tracking-widest text-orange-400/60 font-semibold mb-1">
-                    Simultaneous Hidden Bans
+                <div
+                  className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border ${borderColor}`}
+                >
+                  <p
+                    className={`text-xs uppercase tracking-widest font-semibold mb-1 ${headerColor}`}
+                  >
+                    {phaseTitle}
                   </p>
                   {role === "spectator" ? (
                     <p className="text-sm text-muted-foreground">
-                      Both teams are secretly banning {targetLabel}s...
+                      Both teams are secretly {actionLabelLower} {targetLabel}
+                      s...
                     </p>
                   ) : myDone ? (
                     <p className="text-sm text-muted-foreground">
                       <CheckCircle2 className="w-4 h-4 inline-block mr-1 text-green-400" />
-                      Your bans are locked in — waiting for opponent...
+                      Your {actionLabel.toLowerCase()}s are locked in — waiting
+                      for opponent...
                     </p>
                   ) : (
                     <>
                       <p className="text-lg font-bold mb-0.5">
-                        Ban {remaining} {targetLabel}
+                        {actionLabel} {remaining} {targetLabel}
                         {remaining !== 1 ? "s" : ""}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Your opponent cannot see your bans until both sides
-                        finish
+                        Your opponent cannot see your{" "}
+                        {actionLabel.toLowerCase()}s until both sides finish
                       </p>
                     </>
                   )}
@@ -918,13 +940,30 @@ function DraftContent() {
 
             // Hidden step but phase not yet initialised — show loading
             if (currentStep.hidden) {
+              const loadingIsBan = currentStep.action === "ban";
+              const loadingBorder = loadingIsBan
+                ? "border-orange-500/25"
+                : "border-blue-500/25";
+              const loadingHeader = loadingIsBan
+                ? "text-orange-400/60"
+                : "text-blue-400/60";
+              const loadingTitle = loadingIsBan
+                ? "Simultaneous Hidden Bans"
+                : "Simultaneous Hidden Picks";
+              const loadingText = loadingIsBan
+                ? "Preparing hidden ban phase..."
+                : "Preparing hidden pick phase...";
               return (
-                <div className="mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border border-orange-500/25">
-                  <p className="text-xs uppercase tracking-widest text-orange-400/60 font-semibold mb-1">
-                    Simultaneous Hidden Bans
+                <div
+                  className={`mb-5 rounded-xl px-5 py-4 text-center animate-draft-slide-in bg-card border ${loadingBorder}`}
+                >
+                  <p
+                    className={`text-xs uppercase tracking-widest font-semibold mb-1 ${loadingHeader}`}
+                  >
+                    {loadingTitle}
                   </p>
                   <p className="text-sm text-muted-foreground animate-pulse">
-                    Preparing hidden ban phase...
+                    {loadingText}
                   </p>
                 </div>
               );
@@ -1120,18 +1159,25 @@ function DraftContent() {
               myTeamKey === "team1" ? phase.team1Bans : phase.team2Bans;
             const targetLabel =
               phase.target === "civ" ? "Civilizations" : "Maps";
+            const isBanPhase = phase.action === "ban";
+            const selectionLabel = isBanPhase
+              ? "Your hidden bans:"
+              : "Your hidden picks:";
+            const chipClass = isBanPhase
+              ? "bg-red-500/10 ring-1 ring-red-500/20 text-xs font-medium text-red-400"
+              : "bg-blue-500/10 ring-1 ring-blue-500/20 text-xs font-medium text-blue-400";
 
             return (
               <div>
                 {myBans.length > 0 && (
                   <div className="mb-4 flex flex-wrap gap-2 items-center">
                     <span className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold">
-                      Your hidden bans:
+                      {selectionLabel}
                     </span>
                     {myBans.map((id, i) => (
                       <span
                         key={i}
-                        className="px-2.5 py-1 rounded-lg bg-red-500/10 ring-1 ring-red-500/20 text-xs font-medium text-red-400"
+                        className={`px-2.5 py-1 rounded-lg ${chipClass}`}
                       >
                         {phase.target === "civ"
                           ? getCivName(id)
@@ -1159,9 +1205,13 @@ function DraftContent() {
                           disabled={!clickable}
                           className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all ${
                             alreadyBanned
-                              ? "bg-red-500/10 ring-1 ring-red-500/30"
+                              ? isBanPhase
+                                ? "bg-red-500/10 ring-1 ring-red-500/30"
+                                : "bg-blue-500/10 ring-1 ring-blue-500/30"
                               : clickable
-                                ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                ? isBanPhase
+                                  ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                  : "bg-card ring-1 ring-border hover:ring-blue-500/40 hover:scale-[1.02] cursor-pointer"
                                 : "bg-card/30 ring-1 ring-border/20"
                           }`}
                         >
@@ -1173,7 +1223,9 @@ function DraftContent() {
                               height={96}
                               className={`w-12 h-12 rounded-full object-cover shrink-0 ${
                                 alreadyBanned
-                                  ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                  ? isBanPhase
+                                    ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                    : "opacity-60 ring-2 ring-blue-500/20"
                                   : !clickable
                                     ? "opacity-30 ring-2 ring-border/30"
                                     : "ring-2 ring-border"
@@ -1181,7 +1233,7 @@ function DraftContent() {
                             />
                           )}
                           <p
-                            className={`text-xs font-medium truncate w-full ${alreadyBanned ? "text-red-400/60" : !clickable ? "text-muted-foreground/40" : ""}`}
+                            className={`text-xs font-medium truncate w-full ${alreadyBanned ? (isBanPhase ? "text-red-400/60" : "text-blue-400/60") : !clickable ? "text-muted-foreground/40" : ""}`}
                           >
                             {civName}
                           </p>
@@ -1193,6 +1245,7 @@ function DraftContent() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                     {config.mapPool.map((mapId) => {
                       const mapName = getMapName(mapId);
+                      const mapImage = getMapImage(mapId);
                       const isAvail = available.has(mapId);
                       const alreadyBanned = myBans.includes(mapId);
                       const clickable = isAvail && !alreadyBanned;
@@ -1202,16 +1255,51 @@ function DraftContent() {
                           key={mapId}
                           onClick={() => clickable && handleHiddenBan(mapId)}
                           disabled={!clickable}
-                          className={`p-3 rounded-xl text-left transition-all ${
+                          className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all overflow-hidden ${
                             alreadyBanned
-                              ? "bg-red-500/10 ring-1 ring-red-500/30"
+                              ? isBanPhase
+                                ? "bg-red-500/10 ring-1 ring-red-500/30"
+                                : "bg-blue-500/10 ring-1 ring-blue-500/30"
                               : clickable
-                                ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                ? isBanPhase
+                                  ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
+                                  : "bg-card ring-1 ring-border hover:ring-blue-500/40 hover:scale-[1.02] cursor-pointer"
                                 : "bg-card/30 ring-1 ring-border/20"
                           }`}
                         >
+                          {mapImage ? (
+                            <Image
+                              src={mapImage}
+                              alt={mapName}
+                              width={272}
+                              height={270}
+                              className={`w-full aspect-square rounded-lg object-cover ${
+                                alreadyBanned
+                                  ? isBanPhase
+                                    ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                    : "opacity-60 ring-2 ring-blue-500/20"
+                                  : !clickable
+                                    ? "opacity-30 ring-2 ring-border/30"
+                                    : "ring-2 ring-border"
+                              }`}
+                            />
+                          ) : (
+                            <div
+                              className={`w-full aspect-square rounded-lg flex items-center justify-center ${
+                                alreadyBanned
+                                  ? isBanPhase
+                                    ? "bg-red-500/5"
+                                    : "bg-blue-500/5"
+                                  : "bg-secondary/30"
+                              }`}
+                            >
+                              <span className="text-2xl text-muted-foreground/30">
+                                🗺
+                              </span>
+                            </div>
+                          )}
                           <span
-                            className={`text-xs font-medium truncate block ${alreadyBanned ? "text-red-400/60" : !clickable ? "text-muted-foreground/40" : ""}`}
+                            className={`text-xs font-medium truncate w-full ${alreadyBanned ? (isBanPhase ? "text-red-400/60" : "text-blue-400/60") : !clickable ? "text-muted-foreground/40" : ""}`}
                           >
                             {mapName}
                           </span>
@@ -1298,6 +1386,7 @@ function DraftContent() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                   {config.mapPool.map((mapId) => {
                     const mapName = getMapName(mapId);
+                    const mapImage = getMapImage(mapId);
                     const isAvailable = availableMapSet.has(mapId);
                     const isBannedByAny =
                       draftState.team1.mapBans.includes(mapId) ||
@@ -1314,7 +1403,7 @@ function DraftContent() {
                         key={mapId}
                         onClick={() => clickable && handleSelect(mapId)}
                         disabled={!clickable}
-                        className={`p-3 rounded-xl text-left transition-all ${
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all overflow-hidden ${
                           clickable
                             ? currentStep.action === "ban"
                               ? "bg-card ring-1 ring-border hover:ring-red-500/40 hover:scale-[1.02] cursor-pointer"
@@ -1326,8 +1415,35 @@ function DraftContent() {
                                 : "bg-card/30 ring-1 ring-border/20"
                         }`}
                       >
+                        {mapImage ? (
+                          <Image
+                            src={mapImage}
+                            alt={mapName}
+                            width={272}
+                            height={270}
+                            className={`w-full aspect-square rounded-lg object-cover ${
+                              isBanned
+                                ? "grayscale opacity-40 ring-2 ring-red-500/20"
+                                : isPickedT1 || isPickedT2
+                                  ? "opacity-50 ring-2 ring-border/50"
+                                  : !clickable
+                                    ? "opacity-30 ring-2 ring-border/30"
+                                    : "ring-2 ring-border"
+                            }`}
+                          />
+                        ) : (
+                          <div
+                            className={`w-full aspect-square rounded-lg flex items-center justify-center ${
+                              isBanned ? "bg-red-500/5" : "bg-secondary/30"
+                            }`}
+                          >
+                            <span className="text-2xl text-muted-foreground/30">
+                              🗺
+                            </span>
+                          </div>
+                        )}
                         <span
-                          className={`text-xs font-medium truncate block ${isBanned ? "text-muted-foreground/40" : ""}`}
+                          className={`text-xs font-medium truncate w-full ${isBanned ? "text-muted-foreground/40" : ""}`}
                         >
                           {mapName}
                         </span>

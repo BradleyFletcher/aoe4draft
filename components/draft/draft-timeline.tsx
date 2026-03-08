@@ -6,6 +6,7 @@ import {
   getCivName,
   getCivFlag,
   getMapName,
+  getMapImage,
   getStepActorName,
 } from "@/lib/draft";
 import Image from "next/image";
@@ -91,8 +92,11 @@ export default function DraftTimeline({ state }: DraftTimelineProps) {
                   ? getMapName(itemId)
                   : getCivName(itemId)
                 : null;
-              const itemFlag =
-                itemId && !isMap ? getCivFlag(itemId) : undefined;
+              const itemImg = itemId
+                ? isMap
+                  ? getMapImage(itemId)
+                  : getCivFlag(itemId)
+                : undefined;
               const actorName = step.auto
                 ? "Random"
                 : getStepActorName(config, step);
@@ -141,13 +145,13 @@ export default function DraftTimeline({ state }: DraftTimelineProps) {
                       </div>
                       {isDone && itemName ? (
                         <div className="flex items-center gap-1.5 mt-1">
-                          {itemFlag && (
+                          {itemImg && (
                             <Image
-                              src={itemFlag}
+                              src={itemImg}
                               alt={itemName}
                               width={48}
                               height={48}
-                              className={`w-4 h-4 rounded-full object-cover ${isBan ? "grayscale opacity-60" : ""}`}
+                              className={`w-6 h-6 object-cover ${isMap ? "rounded" : "rounded-full"} ${isBan ? "grayscale opacity-60" : ""}`}
                             />
                           )}
                           <span
