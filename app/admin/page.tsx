@@ -453,9 +453,7 @@ export default function AdminPage() {
               onClick={() => {
                 setHiddenBans(true);
                 setSteps((prev) =>
-                  prev.map((s) =>
-                    s.action === "ban" ? { ...s, hidden: true } : s,
-                  ),
+                  prev.map((s) => (s.auto ? s : { ...s, hidden: true })),
                 );
               }}
               className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${

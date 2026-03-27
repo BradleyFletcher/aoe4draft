@@ -26,7 +26,6 @@ import {
   getRequiredRoles,
   isHiddenBanStep,
   getOrInitHiddenPhase,
-  applyHiddenBan,
   hasTeamCompletedHiddenBans,
   getRemainingHiddenBans,
   getAvailableForHiddenBan,
@@ -541,8 +540,18 @@ function DraftContent() {
     const available = new Set(getAvailableForHiddenBan(draftState, myTeam));
     if (!available.has(itemId)) return;
 
-    // Optimistic local update
-    const optimistic = applyHiddenBan(draftState, myTeam, itemId);
+    // Optimistic local update — only add to our team's hidden array without
+    // triggering reveal (the client has redacted opponent data, so the reveal
+    // check in applyHiddenBan could fire prematurely on placeholder counts).
+    const optimistic = structuredClone(draftState);
+    const oPhase = optimistic.hiddenBanPhase;
+    if (oPhase) {
+      if (myTeam === "team1") {
+        oPhase.team1Bans = [...oPhase.team1Bans, itemId];
+      } else {
+        oPhase.team2Bans = [...oPhase.team2Bans, itemId];
+      }
+    }
     setDraftState(optimistic);
     // Server-side atomic merge — server reads authoritative state, applies ban, saves
     const result = await sendDraftAction(seed, "hidden-ban", role, itemId);
