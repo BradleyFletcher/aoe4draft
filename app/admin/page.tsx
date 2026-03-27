@@ -23,9 +23,49 @@ import {
   Crown,
   ChevronDown,
   ChevronUp,
+  Save,
+  FolderOpen,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+
+interface SavedPreset {
+  name: string;
+  savedAt: number;
+  tournamentName: string;
+  teamSize: TeamSize;
+  banMode: BanMode;
+  allowDuplicatePicks: boolean;
+  hiddenBans: boolean;
+  randomOddMap: boolean;
+  team1Name: string;
+  team2Name: string;
+  team1Players: TeamPlayer[];
+  team2Players: TeamPlayer[];
+  selectedCivs: string[];
+  selectedMaps: string[];
+  steps: DraftStep[];
+}
+
+const PRESETS_STORAGE_KEY = "aoe4_draft_presets";
+
+function loadSavedPresets(): SavedPreset[] {
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPresets(presets: SavedPreset[]) {
+  try {
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 const TEAM_SIZES: { value: TeamSize; label: string }[] = [
   { value: 1, label: "1v1" },
@@ -83,6 +123,75 @@ export default function AdminPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [civFilter, setCivFilter] = useState<string>("all");
   const [mapFilter, setMapFilter] = useState<string>("all");
+
+  // Saved presets
+  const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
+
+  // Hydrate saved presets from localStorage
+  useEffect(() => {
+    setSavedPresets(loadSavedPresets());
+  }, []);
+
+  const handleSavePreset = () => {
+    if (!presetName.trim()) return;
+    const preset: SavedPreset = {
+      name: presetName.trim(),
+      savedAt: Date.now(),
+      tournamentName,
+      teamSize,
+      banMode,
+      allowDuplicatePicks,
+      hiddenBans,
+      randomOddMap,
+      team1Name,
+      team2Name,
+      team1Players,
+      team2Players,
+      selectedCivs: Array.from(selectedCivs),
+      selectedMaps: Array.from(selectedMaps),
+      steps,
+    };
+    const updated = [...savedPresets, preset];
+    setSavedPresets(updated);
+    persistPresets(updated);
+    setPresetName("");
+    setShowSaveDialog(false);
+  };
+
+  const handleLoadPreset = (preset: SavedPreset) => {
+    setTournamentName(preset.tournamentName);
+    setTeamSize(preset.teamSize);
+    setBanMode(preset.banMode);
+    setAllowDuplicatePicks(preset.allowDuplicatePicks);
+    setHiddenBans(preset.hiddenBans);
+    setRandomOddMap(preset.randomOddMap);
+    setTeam1Name(preset.team1Name);
+    setTeam2Name(preset.team2Name);
+    setTeam1Players(preset.team1Players);
+    setTeam2Players(preset.team2Players);
+    setSelectedCivs(new Set(preset.selectedCivs));
+    setSelectedMaps(new Set(preset.selectedMaps));
+    setSteps(preset.steps);
+    setGeneratedUrl(null);
+    setGeneratedSeed(null);
+    setGenerateError(null);
+    setShowLoadDialog(false);
+    try {
+      sessionStorage.removeItem("draft_seed");
+      sessionStorage.removeItem("draft_url");
+    } catch {
+      /* storage unavailable */
+    }
+  };
+
+  const handleDeletePreset = (index: number) => {
+    const updated = savedPresets.filter((_, i) => i !== index);
+    setSavedPresets(updated);
+    persistPresets(updated);
+  };
 
   const handleTeamSizeChange = (size: TeamSize) => {
     setTeamSize(size);
@@ -218,7 +327,8 @@ export default function AdminPage() {
 
     try {
       const seed = generateSeed();
-      // Apply or strip auto flag on the last odd map pick based on toggle
+      // Apply or strip auto flag on the last odd map pick based on toggle,
+      // and enforce the hiddenBans setting on all steps as a final safeguard.
       const finalSteps = steps.map((s, i) => {
         const mapPickIndices = steps
           .map((st, idx) =>
@@ -228,10 +338,18 @@ export default function AdminPage() {
         const isLastMapPick =
           mapPickIndices.length % 2 === 1 &&
           i === mapPickIndices[mapPickIndices.length - 1];
-        if (isLastMapPick) {
-          return { ...s, auto: randomOddMap ? true : undefined };
-        }
-        return { ...s, auto: undefined };
+        const autoVal = isLastMapPick
+          ? randomOddMap
+            ? true
+            : undefined
+          : undefined;
+        const hiddenVal = autoVal ? undefined : hiddenBans ? true : undefined;
+        const { auto: _a, hidden: _h, ...rest } = s;
+        return {
+          ...rest,
+          ...(autoVal !== undefined ? { auto: autoVal } : {}),
+          ...(hiddenVal !== undefined ? { hidden: hiddenVal } : {}),
+        };
       });
 
       const config: DraftConfig = {
@@ -361,6 +479,141 @@ export default function AdminPage() {
             Set up a ban/pick session and share links with players.
           </p>
         </div>
+
+        {/* Save / Load Settings */}
+        <section className="mb-6 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => setShowSaveDialog(true)}
+          >
+            <Save className="w-3.5 h-3.5" /> Save Settings
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => setShowLoadDialog(true)}
+            disabled={savedPresets.length === 0}
+          >
+            <FolderOpen className="w-3.5 h-3.5" /> Load Settings
+            {savedPresets.length > 0 && (
+              <span className="ml-0.5 text-muted-foreground">
+                ({savedPresets.length})
+              </span>
+            )}
+          </Button>
+        </section>
+
+        {/* Save Dialog */}
+        {showSaveDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-xl bg-card border border-border p-5 shadow-2xl mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold">Save Current Settings</h3>
+                <button
+                  onClick={() => setShowSaveDialog(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+                placeholder="Preset name (e.g. Weekly 1v1 Bans)"
+                className={inputClass}
+                autoFocus
+              />
+              <p className="text-[11px] text-muted-foreground mt-2">
+                Saves game mode, pools, ban/pick order, team names, and all
+                options.
+              </p>
+              <div className="flex justify-end gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSaveDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSavePreset}
+                  disabled={!presetName.trim()}
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Load Dialog */}
+        {showLoadDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-xl bg-card border border-border p-5 shadow-2xl mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold">Load Saved Settings</h3>
+                <button
+                  onClick={() => setShowLoadDialog(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {savedPresets.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No saved presets yet.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+                  {savedPresets.map((preset, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border hover:border-primary/30 transition-all group"
+                    >
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={() => handleLoadPreset(preset)}
+                      >
+                        <p className="text-sm font-medium truncate">
+                          {preset.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {preset.teamSize}v{preset.teamSize} &middot;{" "}
+                          {preset.banMode === "global" ? "Global" : "Per-Team"}{" "}
+                          &middot; {preset.steps.length} steps &middot;{" "}
+                          {preset.hiddenBans ? "Hidden" : "Sequential"} &middot;{" "}
+                          {new Date(preset.savedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePreset(i)}
+                        className="text-muted-foreground/40 hover:text-destructive shrink-0 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete preset"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLoadDialog(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Step 1: Game Mode */}
         <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
