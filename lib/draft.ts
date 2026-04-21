@@ -230,6 +230,18 @@ export function getAvailableCivs(state: DraftState): string[] {
   if (!step) return [];
   const isPerTeam = state.config.banMode === "per-team";
 
+  // Collect bans from both regular team data and any active hidden phase
+  const team1Bans = new Set(state.team1.civBans);
+  const team2Bans = new Set(state.team2.civBans);
+  if (
+    state.hiddenBanPhase &&
+    state.hiddenBanPhase.target === "civ" &&
+    state.hiddenBanPhase.action === "ban"
+  ) {
+    state.hiddenBanPhase.team1Bans.forEach((id) => team1Bans.add(id));
+    state.hiddenBanPhase.team2Bans.forEach((id) => team2Bans.add(id));
+  }
+
   if (step.action === "ban") {
     // Exclude civs already picked
     const allPicked = new Set([
@@ -240,7 +252,7 @@ export function getAvailableCivs(state: DraftState): string[] {
     // Per-team: can only see your own bans as used
     const bannedSet = isPerTeam
       ? new Set(getTeamData(state, step.team).civBans)
-      : new Set([...state.team1.civBans, ...state.team2.civBans]);
+      : new Set([...team1Bans, ...team2Bans]);
     return state.config.civPool.filter(
       (id) => !allPicked.has(id) && !bannedSet.has(id),
     );
@@ -276,13 +288,13 @@ export function getAvailableCivs(state: DraftState): string[] {
   // Determine which bans to apply
   if (isPerTeam) {
     const otherTeam = step.team === "team1" ? "team2" : "team1";
-    const otherBans = new Set(getTeamData(state, otherTeam).civBans);
+    const otherBans = otherTeam === "team1" ? team1Bans : team2Bans;
     return state.config.civPool.filter(
       (id) => !otherBans.has(id) && !blocked.has(id),
     );
   }
 
-  const allBanned = new Set([...state.team1.civBans, ...state.team2.civBans]);
+  const allBanned = new Set([...team1Bans, ...team2Bans]);
   return state.config.civPool.filter(
     (id) => !allBanned.has(id) && !blocked.has(id),
   );
@@ -293,12 +305,24 @@ export function getAvailableMaps(state: DraftState): string[] {
   const isPerTeam = state.config.banMode === "per-team";
   const allPicked = new Set([...state.team1.mapPicks, ...state.team2.mapPicks]);
 
+  // Collect bans from both regular team data and any active hidden phase
+  const team1Bans = new Set(state.team1.mapBans);
+  const team2Bans = new Set(state.team2.mapBans);
+  if (
+    state.hiddenBanPhase &&
+    state.hiddenBanPhase.target === "map" &&
+    state.hiddenBanPhase.action === "ban"
+  ) {
+    state.hiddenBanPhase.team1Bans.forEach((id) => team1Bans.add(id));
+    state.hiddenBanPhase.team2Bans.forEach((id) => team2Bans.add(id));
+  }
+
   if (step?.action === "ban") {
     // Global: can't ban anything already banned by either team
     // Per-team: only your own bans are excluded (other team can ban the same map)
     const bannedSet = isPerTeam
       ? new Set(getTeamData(state, step.team).mapBans)
-      : new Set([...state.team1.mapBans, ...state.team2.mapBans]);
+      : new Set([...team1Bans, ...team2Bans]);
     return state.config.mapPool.filter(
       (id) => !allPicked.has(id) && !bannedSet.has(id),
     );
@@ -309,13 +333,13 @@ export function getAvailableMaps(state: DraftState): string[] {
   // Per-team mode: only the other team's bans affect you
   if (isPerTeam && step) {
     const otherTeam = step.team === "team1" ? "team2" : "team1";
-    const otherBans = new Set(getTeamData(state, otherTeam).mapBans);
+    const otherBans = otherTeam === "team1" ? team1Bans : team2Bans;
     return state.config.mapPool.filter(
       (id) => !allPicked.has(id) && !otherBans.has(id),
     );
   }
 
-  const allBanned = new Set([...state.team1.mapBans, ...state.team2.mapBans]);
+  const allBanned = new Set([...team1Bans, ...team2Bans]);
   return state.config.mapPool.filter(
     (id) => !allPicked.has(id) && !allBanned.has(id),
   );
