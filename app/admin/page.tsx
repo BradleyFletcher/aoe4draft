@@ -48,11 +48,26 @@ interface SavedPreset {
   steps: DraftStep[];
 }
 
-const PRESETS_STORAGE_KEY = "aoe4_draft_presets";
+// Storage keys
+const STORAGE_KEYS = {
+  PRESETS: "aoe4_draft_presets",
+  DRAFT_SEED: "draft_seed",
+  DRAFT_URL: "draft_url",
+} as const;
+
+// Default team names
+const DEFAULT_TEAM_NAMES = {
+  TEAM_1: "Team 1",
+  TEAM_2: "Team 2",
+} as const;
+
+// Default player name template
+const DEFAULT_PLAYER_NAME = (teamNum: 1 | 2, playerIndex: number) =>
+  `Team ${teamNum} Player ${playerIndex + 1}`;
 
 function loadSavedPresets(): SavedPreset[] {
   try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEYS.PRESETS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -61,7 +76,7 @@ function loadSavedPresets(): SavedPreset[] {
 
 function persistPresets(presets: SavedPreset[]) {
   try {
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    localStorage.setItem(STORAGE_KEYS.PRESETS, JSON.stringify(presets));
   } catch {
     /* storage unavailable */
   }
@@ -76,7 +91,7 @@ const TEAM_SIZES: { value: TeamSize; label: string }[] = [
 
 function makeDefaultPlayers(size: TeamSize, teamNum: 1 | 2): TeamPlayer[] {
   return Array.from({ length: size }, (_, i) => ({
-    name: `Team ${teamNum} Player ${i + 1}`,
+    name: DEFAULT_PLAYER_NAME(teamNum, i),
   }));
 }
 
@@ -110,8 +125,8 @@ export default function AdminPage() {
   // Hydrate from sessionStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
     try {
-      const seed = sessionStorage.getItem("draft_seed");
-      const url = sessionStorage.getItem("draft_url");
+      const seed = sessionStorage.getItem(STORAGE_KEYS.DRAFT_SEED);
+      const url = sessionStorage.getItem(STORAGE_KEYS.DRAFT_URL);
       if (seed) setGeneratedSeed(seed);
       if (url) setGeneratedUrl(url);
     } catch {
@@ -180,8 +195,8 @@ export default function AdminPage() {
     setGenerateError(null);
     setShowLoadDialog(false);
     try {
-      sessionStorage.removeItem("draft_seed");
-      sessionStorage.removeItem("draft_url");
+      sessionStorage.removeItem(STORAGE_KEYS.DRAFT_SEED);
+      sessionStorage.removeItem(STORAGE_KEYS.DRAFT_URL);
     } catch {
       /* storage unavailable */
     }
@@ -198,8 +213,8 @@ export default function AdminPage() {
     setTeam1Players(makeDefaultPlayers(size, 1));
     setTeam2Players(makeDefaultPlayers(size, 2));
     if (size === 1) {
-      setTeam1Name("Team 1");
-      setTeam2Name("Team 2");
+      setTeam1Name(DEFAULT_TEAM_NAMES.TEAM_1);
+      setTeam2Name(DEFAULT_TEAM_NAMES.TEAM_2);
     }
     const result = PRESET_DRAFT_FORMATS["default"].generate(size, {
       hiddenBans,
@@ -209,8 +224,8 @@ export default function AdminPage() {
     setGeneratedSeed(null);
     setGenerateError(null);
     try {
-      sessionStorage.removeItem("draft_seed");
-      sessionStorage.removeItem("draft_url");
+      sessionStorage.removeItem(STORAGE_KEYS.DRAFT_SEED);
+      sessionStorage.removeItem(STORAGE_KEYS.DRAFT_URL);
     } catch {
       /* storage unavailable */
     }
@@ -389,22 +404,16 @@ export default function AdminPage() {
         return;
       }
 
-      const data = await res.json();
-      if (!data.ok) {
-        setGenerateError("Failed to save draft to server. Please try again.");
-        return;
-      }
-
-      const url = `${window.location.origin}/draft?seed=${seed}`;
-
-      setGeneratedSeed(seed);
-      setGeneratedUrl(url);
+      // Save to sessionStorage for persistence
       try {
-        sessionStorage.setItem("draft_seed", seed);
-        sessionStorage.setItem("draft_url", url);
+        sessionStorage.setItem(STORAGE_KEYS.DRAFT_SEED, seed);
+        sessionStorage.setItem(STORAGE_KEYS.DRAFT_URL, `/draft/${seed}`);
       } catch {
         /* storage unavailable */
       }
+
+      setGeneratedSeed(seed);
+      setGeneratedUrl(`/draft/${seed}`);
     } catch {
       setGenerateError(
         "Network error. Please check your connection and try again.",
@@ -462,7 +471,84 @@ export default function AdminPage() {
   const [showSteps, setShowSteps] = useState(false);
 
   const inputClass =
-    "w-full px-3 py-2.5 bg-input rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 text-sm placeholder:text-muted-foreground/50 transition-colors";
+    "w-full px-3 py-2 bg-input rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all";
+
+  // Reusable input field component
+  function InputField({
+    value,
+    onChange,
+    placeholder,
+    className = "",
+    autoFocus = false,
+    onKeyDown,
+  }: {
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    placeholder?: string;
+    className?: string;
+    autoFocus?: boolean;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  }) {
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className={`${inputClass} ${className}`}
+        autoFocus={autoFocus}
+        onKeyDown={onKeyDown}
+      />
+    );
+  }
+
+  // Reusable team input section component
+  function TeamInputSection({
+    teamName,
+    onTeamNameChange,
+    teamColor,
+    players,
+    onPlayerChange,
+    showPlayers,
+  }: {
+    teamName: string;
+    onTeamNameChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    teamColor: "blue" | "red";
+    players: TeamPlayer[];
+    onPlayerChange: (teamNum: 1 | 2, playerIndex: number, name: string) => void;
+    showPlayers: boolean;
+  }) {
+    const colorClasses = {
+      blue: "!border-blue-800/60 focus:!ring-blue-500/40 focus:!border-blue-500/60",
+      red: "!border-red-800/60 focus:!ring-red-500/40 focus:!border-red-500/60",
+    };
+    const playerColorClasses = {
+      blue: "!border-blue-900/40 !text-xs !py-2",
+      red: "!border-red-900/40 !text-xs !py-2",
+    };
+
+    return (
+      <div className="space-y-2">
+        <InputField
+          value={teamName}
+          onChange={onTeamNameChange}
+          className={colorClasses[teamColor]}
+        />
+        {showPlayers &&
+          players.map((p, i) => (
+            <InputField
+              key={i}
+              value={p.name}
+              onChange={(e) =>
+                onPlayerChange(teamColor === "blue" ? 1 : 2, i, e.target.value)
+              }
+              placeholder={`Player ${i + 1}`}
+              className={playerColorClasses[teamColor]}
+            />
+          ))}
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen px-4 pb-8 md:px-8">
@@ -519,13 +605,11 @@ export default function AdminPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <input
-                type="text"
+              <InputField
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
                 placeholder="Preset name (e.g. Weekly 1v1 Bans)"
-                className={inputClass}
                 autoFocus
               />
               <p className="text-[11px] text-muted-foreground mt-2">
@@ -784,52 +868,28 @@ export default function AdminPage() {
         <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
           <h2 className="text-sm font-semibold mb-4">Players</h2>
           <div className="space-y-3">
-            <input
-              type="text"
+            <InputField
               value={tournamentName}
               onChange={(e) => setTournamentName(e.target.value)}
               placeholder="Draft name"
-              className={inputClass}
             />
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={team1Name}
-                  onChange={(e) => setTeam1Name(e.target.value)}
-                  className={`${inputClass} !border-blue-800/60 focus:!ring-blue-500/40 focus:!border-blue-500/60`}
-                />
-                {teamSize > 1 &&
-                  team1Players.map((p, i) => (
-                    <input
-                      key={i}
-                      type="text"
-                      value={p.name}
-                      onChange={(e) => updatePlayer(1, i, e.target.value)}
-                      placeholder={`Player ${i + 1}`}
-                      className={`${inputClass} !border-blue-900/40 !text-xs !py-2`}
-                    />
-                  ))}
-              </div>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={team2Name}
-                  onChange={(e) => setTeam2Name(e.target.value)}
-                  className={`${inputClass} !border-red-800/60 focus:!ring-red-500/40 focus:!border-red-500/60`}
-                />
-                {teamSize > 1 &&
-                  team2Players.map((p, i) => (
-                    <input
-                      key={i}
-                      type="text"
-                      value={p.name}
-                      onChange={(e) => updatePlayer(2, i, e.target.value)}
-                      placeholder={`Player ${i + 1}`}
-                      className={`${inputClass} !border-red-900/40 !text-xs !py-2`}
-                    />
-                  ))}
-              </div>
+              <TeamInputSection
+                teamName={team1Name}
+                onTeamNameChange={(e) => setTeam1Name(e.target.value)}
+                teamColor="blue"
+                players={team1Players}
+                onPlayerChange={updatePlayer}
+                showPlayers={teamSize > 1}
+              />
+              <TeamInputSection
+                teamName={team2Name}
+                onTeamNameChange={(e) => setTeam2Name(e.target.value)}
+                teamColor="red"
+                players={team2Players}
+                onPlayerChange={updatePlayer}
+                showPlayers={teamSize > 1}
+              />
             </div>
           </div>
         </section>
