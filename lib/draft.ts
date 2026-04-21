@@ -44,6 +44,7 @@ export interface DraftConfig {
   teamSize: TeamSize;
   banMode: BanMode;
   allowDuplicatePicks: boolean;
+  uniqueCivsAcrossTeams: boolean; // Prevent both teams from picking the same civ
   civPool: string[];
   mapPool: string[];
   steps: DraftStep[];
@@ -289,6 +290,7 @@ export function getAvailableCivs(state: DraftState): string[] {
 
   // Picking: exclude bans and already-picked civs
   const allowDupes = state.config.allowDuplicatePicks;
+  const uniqueAcrossTeams = state.config.uniqueCivsAcrossTeams;
 
   // Collect picks that should block this player
   let blocked = new Set<string>();
@@ -310,8 +312,52 @@ export function getAvailableCivs(state: DraftState): string[] {
         blocked.add(id);
       }
     }
+    // If unique across teams, block other team's picks too
+    if (uniqueAcrossTeams) {
+      const otherTeam = step.team === "team1" ? "team2" : "team1";
+      const otherTeamPicks = getTeamData(state, otherTeam).civPicks;
+      for (const id of otherTeamPicks) {
+        blocked.add(id);
+      }
+      // Also include hidden phase picks from other team
+      if (
+        state.hiddenBanPhase &&
+        state.hiddenBanPhase.target === "civ" &&
+        state.hiddenBanPhase.action === "pick"
+      ) {
+        const otherHiddenPicks =
+          otherTeam === "team1"
+            ? state.hiddenBanPhase.team1Bans
+            : state.hiddenBanPhase.team2Bans;
+        for (const id of otherHiddenPicks) {
+          blocked.add(id);
+        }
+      }
+    }
   } else {
     blocked = new Set(getTeamData(state, step.team).civPicks);
+    // If unique across teams, block other team's picks too
+    if (uniqueAcrossTeams) {
+      const otherTeam = step.team === "team1" ? "team2" : "team1";
+      const otherTeamPicks = getTeamData(state, otherTeam).civPicks;
+      for (const id of otherTeamPicks) {
+        blocked.add(id);
+      }
+      // Also include hidden phase picks from other team
+      if (
+        state.hiddenBanPhase &&
+        state.hiddenBanPhase.target === "civ" &&
+        state.hiddenBanPhase.action === "pick"
+      ) {
+        const otherHiddenPicks =
+          otherTeam === "team1"
+            ? state.hiddenBanPhase.team1Bans
+            : state.hiddenBanPhase.team2Bans;
+        for (const id of otherHiddenPicks) {
+          blocked.add(id);
+        }
+      }
+    }
   }
 
   // Determine which bans to apply

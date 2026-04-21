@@ -37,6 +37,7 @@ interface SavedPreset {
   teamSize: TeamSize;
   banMode: BanMode;
   allowDuplicatePicks: boolean;
+  uniqueCivsAcrossTeams: boolean;
   hiddenBans: boolean;
   randomOddMap: boolean;
   team1Name: string;
@@ -100,6 +101,7 @@ export default function AdminPage() {
   const [teamSize, setTeamSize] = useState<TeamSize>(1);
   const [banMode, setBanMode] = useState<BanMode>("global");
   const [allowDuplicatePicks, setAllowDuplicatePicks] = useState(false);
+  const [uniqueCivsAcrossTeams, setUniqueCivsAcrossTeams] = useState(false);
   const [hiddenBans, setHiddenBans] = useState(false);
   const [randomOddMap, setRandomOddMap] = useState(true);
   const [team1Name, setTeam1Name] = useState("Team 1");
@@ -159,6 +161,7 @@ export default function AdminPage() {
       teamSize,
       banMode,
       allowDuplicatePicks,
+      uniqueCivsAcrossTeams,
       hiddenBans,
       randomOddMap,
       team1Name,
@@ -181,6 +184,7 @@ export default function AdminPage() {
     setTeamSize(preset.teamSize);
     setBanMode(preset.banMode);
     setAllowDuplicatePicks(preset.allowDuplicatePicks);
+    setUniqueCivsAcrossTeams(preset.uniqueCivsAcrossTeams);
     setHiddenBans(preset.hiddenBans);
     setRandomOddMap(preset.randomOddMap);
     setTeam1Name(preset.team1Name);
@@ -372,6 +376,7 @@ export default function AdminPage() {
         teamSize,
         banMode,
         allowDuplicatePicks: teamSize > 1 ? allowDuplicatePicks : false,
+        uniqueCivsAcrossTeams,
         civPool: Array.from(selectedCivs),
         mapPool: Array.from(selectedMaps),
         steps: finalSteps,
@@ -564,6 +569,26 @@ export default function AdminPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Set up a ban/pick session and share links with players.
           </p>
+        </div>
+
+        {/* Pro Mode Announcement Banner */}
+        <div className="mb-6 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+              <span className="text-white text-sm font-bold">P</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                Introducing Pro Mode 🎮
+              </h3>
+              <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                Enable Pro Mode for competitive drafts where each civilization
+                can only be picked once across both teams. Perfect for
+                tournament play and balanced matchups. Find it in the Cross-Team
+                Civ Picks section below!
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Save / Load Settings */}
@@ -788,20 +813,28 @@ export default function AdminPage() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {
+                if (uniqueCivsAcrossTeams) {
+                  // Can't enable simultaneous mode when unique civs across teams is enabled
+                  return;
+                }
                 setHiddenBans(true);
                 setSteps((prev) =>
                   prev.map((s) => (s.auto ? s : { ...s, hidden: true })),
                 );
               }}
+              disabled={uniqueCivsAcrossTeams}
               className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
                 hiddenBans
                   ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                  : uniqueCivsAcrossTeams
+                    ? "bg-secondary/20 border border-border/50 text-muted-foreground cursor-not-allowed"
+                    : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
               }`}
             >
               <span className="font-semibold block">Simultaneous</span>
               <span className="text-[11px] opacity-70">
                 Both teams ban at the same time, hidden until revealed
+                {uniqueCivsAcrossTeams && " (disabled with Pro Mode)"}
               </span>
             </button>
             <button
@@ -861,6 +894,63 @@ export default function AdminPage() {
                 </button>
               </div>
             </>
+          )}
+
+          {/* Unique Civs Across Teams */}
+          <h3 className="text-xs font-semibold text-muted-foreground mb-2 mt-4">
+            Cross-Team Civ Picks
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setUniqueCivsAcrossTeams(false);
+                // If disabling unique civs, we can keep simultaneous mode as is
+              }}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                !uniqueCivsAcrossTeams
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Shared</span>
+              <span className="text-[11px] opacity-70">
+                Both teams can pick the same civs
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setUniqueCivsAcrossTeams(true);
+                // If enabling unique civs, disable simultaneous mode for civ picks
+                if (hiddenBans) {
+                  // Show warning that simultaneous mode will be disabled
+                  setHiddenBans(false);
+                  // Update steps to remove hidden flag from civ pick steps
+                  setSteps((prev) =>
+                    prev.map((s) =>
+                      s.target === "civ" && s.action === "pick"
+                        ? { ...s, hidden: false }
+                        : s,
+                    ),
+                  );
+                }
+              }}
+              className={`py-2.5 px-3 rounded-lg text-sm text-left transition-all ${
+                uniqueCivsAcrossTeams
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary/50 border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="font-semibold block">Pro Mode</span>
+              <span className="text-[11px] opacity-70">
+                Each civ can only be picked once total
+              </span>
+            </button>
+          </div>
+          {uniqueCivsAcrossTeams && (
+            <p className="text-[11px] text-amber-400 mt-2">
+              Note: Pro Mode requires sequential picking (simultaneous mode
+              disabled for civ picks)
+            </p>
           )}
         </section>
 
