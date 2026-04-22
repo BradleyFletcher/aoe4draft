@@ -37,6 +37,8 @@ export interface HiddenBanPhase {
 
 export interface TeamPlayer {
   name: string;
+  profileId?: number; // AOE4 World profile ID
+  aoe4Data?: import("./aoe4world").AOE4PlayerStats; // Cached player stats
 }
 
 export interface DraftConfig {

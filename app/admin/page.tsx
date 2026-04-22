@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import PlayerSearch from "@/components/PlayerSearch";
 
 interface SavedPreset {
   name: string;
@@ -94,6 +95,84 @@ function makeDefaultPlayers(size: TeamSize, teamNum: 1 | 2): TeamPlayer[] {
   return Array.from({ length: size }, (_, i) => ({
     name: DEFAULT_PLAYER_NAME(teamNum, i),
   }));
+}
+
+const inputClass =
+  "w-full px-3 py-2 bg-input rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all";
+
+// Reusable input field component
+function InputField({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+  autoFocus = false,
+  onKeyDown,
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  className?: string;
+  autoFocus?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className={`${inputClass} ${className}`}
+      autoFocus={autoFocus}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
+// Reusable team input section component
+function TeamInputSection({
+  teamName,
+  onTeamNameChange,
+  teamColor,
+  players,
+  onPlayerChange,
+  showPlayers,
+}: {
+  teamName: string;
+  onTeamNameChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  teamColor: "blue" | "red";
+  players: TeamPlayer[];
+  onPlayerChange: (
+    teamNum: 1 | 2,
+    playerIndex: number,
+    player: TeamPlayer,
+  ) => void;
+  showPlayers: boolean;
+}) {
+  const colorClasses = {
+    blue: "!border-blue-800/60 focus:!ring-blue-500/40 focus:!border-blue-500/60",
+    red: "!border-red-800/60 focus:!ring-red-500/40 focus:!border-red-500/60",
+  };
+
+  return (
+    <div className="space-y-2">
+      <InputField
+        value={teamName}
+        onChange={onTeamNameChange}
+        className={colorClasses[teamColor]}
+      />
+      {players.map((p, i) => (
+        <PlayerSearch
+          key={i}
+          value={p}
+          onChange={(player) =>
+            onPlayerChange(teamColor === "blue" ? 1 : 2, i, player)
+          }
+          placeholder={`Player ${i + 1}`}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function AdminPage() {
@@ -235,11 +314,11 @@ export default function AdminPage() {
     }
   };
 
-  const updatePlayer = (team: 1 | 2, index: number, name: string) => {
+  const updatePlayer = (team: 1 | 2, index: number, player: TeamPlayer) => {
     const setter = team === 1 ? setTeam1Players : setTeam2Players;
     const players = team === 1 ? team1Players : team2Players;
     const next = [...players];
-    next[index] = { name };
+    next[index] = player;
     setter(next);
   };
 
@@ -474,86 +553,6 @@ export default function AdminPage() {
   const [showCivPool, setShowCivPool] = useState(false);
   const [showMapPool, setShowMapPool] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
-
-  const inputClass =
-    "w-full px-3 py-2 bg-input rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all";
-
-  // Reusable input field component
-  function InputField({
-    value,
-    onChange,
-    placeholder,
-    className = "",
-    autoFocus = false,
-    onKeyDown,
-  }: {
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    placeholder?: string;
-    className?: string;
-    autoFocus?: boolean;
-    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  }) {
-    return (
-      <input
-        type="text"
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className={`${inputClass} ${className}`}
-        autoFocus={autoFocus}
-        onKeyDown={onKeyDown}
-      />
-    );
-  }
-
-  // Reusable team input section component
-  function TeamInputSection({
-    teamName,
-    onTeamNameChange,
-    teamColor,
-    players,
-    onPlayerChange,
-    showPlayers,
-  }: {
-    teamName: string;
-    onTeamNameChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    teamColor: "blue" | "red";
-    players: TeamPlayer[];
-    onPlayerChange: (teamNum: 1 | 2, playerIndex: number, name: string) => void;
-    showPlayers: boolean;
-  }) {
-    const colorClasses = {
-      blue: "!border-blue-800/60 focus:!ring-blue-500/40 focus:!border-blue-500/60",
-      red: "!border-red-800/60 focus:!ring-red-500/40 focus:!border-red-500/60",
-    };
-    const playerColorClasses = {
-      blue: "!border-blue-900/40 !text-xs !py-2",
-      red: "!border-red-900/40 !text-xs !py-2",
-    };
-
-    return (
-      <div className="space-y-2">
-        <InputField
-          value={teamName}
-          onChange={onTeamNameChange}
-          className={colorClasses[teamColor]}
-        />
-        {showPlayers &&
-          players.map((p, i) => (
-            <InputField
-              key={i}
-              value={p.name}
-              onChange={(e) =>
-                onPlayerChange(teamColor === "blue" ? 1 : 2, i, e.target.value)
-              }
-              placeholder={`Player ${i + 1}`}
-              className={playerColorClasses[teamColor]}
-            />
-          ))}
-      </div>
-    );
-  }
 
   return (
     <main className="min-h-screen px-4 pb-8 md:px-8">
