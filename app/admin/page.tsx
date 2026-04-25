@@ -30,6 +30,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import PlayerSearch from "@/components/PlayerSearch";
+import WinPrediction from "@/components/WinPrediction";
 
 interface SavedPreset {
   name: string;
@@ -207,9 +208,19 @@ export default function AdminPage() {
   useEffect(() => {
     try {
       const seed = sessionStorage.getItem(STORAGE_KEYS.DRAFT_SEED);
-      const url = sessionStorage.getItem(STORAGE_KEYS.DRAFT_URL);
+      const storedUrl = sessionStorage.getItem(STORAGE_KEYS.DRAFT_URL);
       if (seed) setGeneratedSeed(seed);
-      if (url) setGeneratedUrl(url);
+      if (storedUrl) {
+        // Migrate legacy broken URL format (/draft/SEED) to /draft?seed=SEED
+        const migrated =
+          /^\/draft\/[A-Z0-9]+$/i.test(storedUrl) && seed
+            ? `/draft?seed=${seed}`
+            : storedUrl;
+        if (migrated !== storedUrl) {
+          sessionStorage.setItem(STORAGE_KEYS.DRAFT_URL, migrated);
+        }
+        setGeneratedUrl(migrated);
+      }
     } catch {
       /* storage unavailable */
     }
@@ -491,13 +502,13 @@ export default function AdminPage() {
       // Save to sessionStorage for persistence
       try {
         sessionStorage.setItem(STORAGE_KEYS.DRAFT_SEED, seed);
-        sessionStorage.setItem(STORAGE_KEYS.DRAFT_URL, `/draft/${seed}`);
+        sessionStorage.setItem(STORAGE_KEYS.DRAFT_URL, `/draft?seed=${seed}`);
       } catch {
         /* storage unavailable */
       }
 
       setGeneratedSeed(seed);
-      setGeneratedUrl(`/draft/${seed}`);
+      setGeneratedUrl(`/draft?seed=${seed}`);
     } catch {
       setGenerateError(
         "Network error. Please check your connection and try again.",
@@ -980,6 +991,27 @@ export default function AdminPage() {
                 showPlayers={teamSize > 1}
               />
             </div>
+
+            {/* Win Prediction for 1v1 */}
+            {teamSize === 1 &&
+              team1Players[0]?.profileId &&
+              team2Players[0]?.profileId && (
+                <div className="mt-4">
+                  <WinPrediction
+                    player1={{
+                      name: team1Players[0].name,
+                      profileId: team1Players[0].profileId,
+                      rating: team1Players[0].rating || 1000,
+                    }}
+                    player2={{
+                      name: team2Players[0].name,
+                      profileId: team2Players[0].profileId,
+                      rating: team2Players[0].rating || 1000,
+                    }}
+                    gameMode="rm_solo"
+                  />
+                </div>
+              )}
           </div>
         </section>
 

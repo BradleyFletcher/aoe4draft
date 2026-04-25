@@ -86,7 +86,9 @@ export default function PlayerSearch({
       const stats = await AOE4WorldAPI.getPlayerStats(profileId);
       if (stats) {
         setSelectedPlayer(stats);
-        onChange({ ...value, aoe4Data: stats });
+        const rating =
+          stats.modes.rm_solo?.rating || stats.modes.rm_team?.rating || 1000;
+        onChange({ ...value, aoe4Data: stats, rating });
       }
     } catch (error) {
       console.warn("Failed to load player stats:", error);
@@ -433,27 +435,6 @@ export default function PlayerSearch({
                           )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-
-              {/* Top Civilizations */}
-              {primaryStats.civilizations &&
-                primaryStats.civilizations.length > 0 && (
-                  <div>
-                    <div className="font-medium text-xs mb-1">Top Civs</div>
-                    <div className="flex flex-wrap gap-1">
-                      {primaryStats.civilizations.slice(0, 3).map((civ) => (
-                        <span
-                          key={civ.civilization}
-                          className="text-xs px-2 py-1 bg-background rounded border border-border/50"
-                        >
-                          {civ.civilization
-                            .replace("_", " ")
-                            .replace(/\b\w/g, (l) => l.toUpperCase())}{" "}
-                          ({AOE4WorldAPI.formatWinRate(civ.win_rate)})
-                        </span>
-                      ))}
                     </div>
                   </div>
                 )}

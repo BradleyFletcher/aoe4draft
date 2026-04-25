@@ -7,6 +7,7 @@ import {
   Dice5,
   Swords,
   Settings2,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -28,17 +29,25 @@ export default function Home() {
         </p>
 
         {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto mb-16">
-          <Link href="/admin" className="flex-1">
-            <button className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] transition-all">
-              Create Draft
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </Link>
-          <Link href="/seed" className="flex-1">
-            <button className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-card ring-1 ring-border font-semibold text-sm hover:ring-primary/40 hover:scale-[1.02] transition-all">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              Join Draft
+        <div className="flex flex-col gap-3 justify-center max-w-2xl mx-auto mb-16">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Link href="/admin" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] transition-all">
+                Create Draft
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </Link>
+            <Link href="/seed" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-card ring-1 ring-border font-semibold text-sm hover:ring-primary/40 hover:scale-[1.02] transition-all">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                Join Draft
+              </button>
+            </Link>
+          </div>
+          <Link href="/analysis">
+            <button className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 ring-1 ring-border font-semibold text-sm hover:ring-primary/40 hover:scale-[1.02] transition-all">
+              <TrendingUp className="w-4 h-4 text-blue-400" />
+              Player Analysis
             </button>
           </Link>
         </div>
