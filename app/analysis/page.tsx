@@ -15,15 +15,19 @@ import {
   CheckCircle2,
   Swords,
 } from "lucide-react";
-import {
-  AOE4WorldAPI,
-  type AOE4PlayerStats,
-  type Game,
-} from "@/lib/aoe4world";
+import { AOE4WorldAPI, type AOE4PlayerStats, type Game } from "@/lib/aoe4world";
 import RankBadge from "@/components/RankBadge";
-import { titleCase, formatDuration, type AggregatedStat } from "@/components/analysis/helpers";
+import {
+  titleCase,
+  formatDuration,
+  type AggregatedStat,
+} from "@/components/analysis/helpers";
 import { StatCard } from "@/components/analysis/StatCard";
-import { PerfBar, MatchupRow, HighlightCard } from "@/components/analysis/PerfBar";
+import {
+  PerfBar,
+  MatchupRow,
+  HighlightCard,
+} from "@/components/analysis/PerfBar";
 import { LossRow } from "@/components/analysis/LossRow";
 import { ImprovementInsights } from "@/components/analysis/Insights";
 
@@ -104,7 +108,10 @@ export default function PlayerAnalysisPage() {
           team.forEach((e) => opponentCivs.push(e.player.civilization));
         }
       });
-      const bump = (m: Map<string, { wins: number; losses: number }>, k: string) => {
+      const bump = (
+        m: Map<string, { wins: number; losses: number }>,
+        k: string,
+      ) => {
         if (!m.has(k)) m.set(k, { wins: 0, losses: 0 });
         const v = m.get(k)!;
         if (myResult === "win") v.wins++;
@@ -123,7 +130,10 @@ export default function PlayerAnalysisPage() {
       recentResults.push(myResult === "win" ? "W" : "L");
     }
 
-    const toSorted = (m: Map<string, { wins: number; losses: number }>, minGames = 2): AggregatedStat[] =>
+    const toSorted = (
+      m: Map<string, { wins: number; losses: number }>,
+      minGames = 2,
+    ): AggregatedStat[] =>
       Array.from(m.entries())
         .map(([key, v]) => ({
           key,
@@ -138,8 +148,10 @@ export default function PlayerAnalysisPage() {
     const maps = toSorted(mapStats, 2);
     const civs = toSorted(civStats, 2);
     const vsCivs = toSorted(vsCivStats, 2);
-    const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
-    const byWR = (arr: AggregatedStat[]) => [...arr].sort((a, b) => b.winRate - a.winRate);
+    const avg = (arr: number[]) =>
+      arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    const byWR = (arr: AggregatedStat[]) =>
+      [...arr].sort((a, b) => b.winRate - a.winRate);
 
     return {
       maps,
@@ -147,7 +159,10 @@ export default function PlayerAnalysisPage() {
       vsCivs,
       totalWins,
       totalLosses,
-      winRate: totalWins + totalLosses > 0 ? (totalWins / (totalWins + totalLosses)) * 100 : 0,
+      winRate:
+        totalWins + totalLosses > 0
+          ? (totalWins / (totalWins + totalLosses)) * 100
+          : 0,
       avgWinDuration: avg(winDurations),
       avgLossDuration: avg(lossDurations),
       recentResults,
@@ -164,7 +179,12 @@ export default function PlayerAnalysisPage() {
     if (!playerData) return [];
     return recentGames
       .map((game) => {
-        let myData: { result: string; civilization: string; rating_diff: number } | null = null;
+        type MyData = {
+          result: string;
+          civilization: string;
+          rating_diff: number;
+        };
+        let myData: MyData | null = null;
         let oppCiv = "";
         let myTeamIdx = -1;
         game.teams.forEach((team, idx) => {
@@ -176,15 +196,20 @@ export default function PlayerAnalysisPage() {
               rating_diff?: number;
             };
             if (p.profile_id === playerData.profile_id) {
-              myData = { result: p.result, civilization: p.civilization, rating_diff: p.rating_diff ?? 0 };
+              myData = {
+                result: p.result,
+                civilization: p.civilization,
+                rating_diff: p.rating_diff ?? 0,
+              };
               myTeamIdx = idx;
             }
           });
         });
         game.teams.forEach((team, idx) => {
-          if (idx !== myTeamIdx && team[0]) oppCiv = team[0].player.civilization;
+          if (idx !== myTeamIdx && team[0])
+            oppCiv = team[0].player.civilization;
         });
-        return { game, myData, oppCiv };
+        return { game, myData: myData as MyData | null, oppCiv };
       })
       .filter((x) => x.myData?.result === "loss")
       .slice(0, 5);
@@ -208,7 +233,8 @@ export default function PlayerAnalysisPage() {
         <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
           <h1 className="text-xl font-bold mb-1">Player Analysis</h1>
           <p className="text-xs text-muted-foreground mb-4">
-            Deep stats, matchup analysis, and improvement insights from recent matches
+            Deep stats, matchup analysis, and improvement insights from recent
+            matches
           </p>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -245,9 +271,12 @@ export default function PlayerAnalysisPage() {
                     />
                   )}
                   <div>
-                    <h2 className="text-xl font-bold leading-tight">{playerData.name}</h2>
+                    <h2 className="text-xl font-bold leading-tight">
+                      {playerData.name}
+                    </h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {AOE4WorldAPI.getCountryFlag(playerData.country)} {playerData.country?.toUpperCase()}
+                      {AOE4WorldAPI.getCountryFlag(playerData.country)}{" "}
+                      {playerData.country?.toUpperCase()}
                       {" • "}
                       <a
                         href={playerData.site_url}
@@ -264,7 +293,9 @@ export default function PlayerAnalysisPage() {
                   <button
                     onClick={() => handleModeChange("rm_solo")}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      mode === "rm_solo" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                      mode === "rm_solo"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     1v1 Ranked
@@ -272,7 +303,9 @@ export default function PlayerAnalysisPage() {
                   <button
                     onClick={() => handleModeChange("rm_team")}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      mode === "rm_team" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                      mode === "rm_team"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     Team Ranked
@@ -287,24 +320,42 @@ export default function PlayerAnalysisPage() {
                   label="Rating"
                   value={modeStats.rating?.toString() || "—"}
                   sub={`Peak ${modeStats.max_rating}`}
-                  badge={<RankBadge rankLevel={modeStats.rank_level} size="sm" />}
+                  badge={
+                    <RankBadge rankLevel={modeStats.rank_level} size="sm" />
+                  }
                 />
                 <StatCard
                   label="Rank"
                   value={`#${modeStats.rank?.toLocaleString() || "—"}`}
-                  sub={modeStats.rank_level ? titleCase(modeStats.rank_level) : ""}
+                  sub={
+                    modeStats.rank_level ? titleCase(modeStats.rank_level) : ""
+                  }
                 />
                 <StatCard
                   label="Win Rate"
                   value={`${modeStats.win_rate?.toFixed(1) || 0}%`}
                   sub={`${modeStats.wins_count}W - ${modeStats.losses_count}L`}
-                  valueClass={modeStats.win_rate >= 50 ? "text-green-400" : "text-red-400"}
+                  valueClass={
+                    modeStats.win_rate >= 50 ? "text-green-400" : "text-red-400"
+                  }
                 />
                 <StatCard
                   label="Streak"
                   value={`${modeStats.streak > 0 ? "+" : ""}${modeStats.streak}`}
-                  sub={modeStats.streak > 0 ? "Winning" : modeStats.streak < 0 ? "Losing" : "Even"}
-                  valueClass={modeStats.streak > 0 ? "text-green-400" : modeStats.streak < 0 ? "text-red-400" : ""}
+                  sub={
+                    modeStats.streak > 0
+                      ? "Winning"
+                      : modeStats.streak < 0
+                        ? "Losing"
+                        : "Even"
+                  }
+                  valueClass={
+                    modeStats.streak > 0
+                      ? "text-green-400"
+                      : modeStats.streak < 0
+                        ? "text-red-400"
+                        : ""
+                  }
                 />
               </section>
             )}
@@ -320,7 +371,9 @@ export default function PlayerAnalysisPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
-                    <div className="text-xs text-muted-foreground mb-2">Result timeline (newest first)</div>
+                    <div className="text-xs text-muted-foreground mb-2">
+                      Result timeline (newest first)
+                    </div>
                     <div className="flex flex-wrap gap-1">
                       {analytics.recentResults.slice(0, 20).map((r, i) => (
                         <div
@@ -342,7 +395,9 @@ export default function PlayerAnalysisPage() {
                       />
                     </div>
                     <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
-                      <span>{analytics.totalWins}W - {analytics.totalLosses}L</span>
+                      <span>
+                        {analytics.totalWins}W - {analytics.totalLosses}L
+                      </span>
                       <span>{analytics.winRate.toFixed(0)}%</span>
                     </div>
                   </div>
@@ -351,13 +406,17 @@ export default function PlayerAnalysisPage() {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                         <Clock className="w-3.5 h-3.5" /> Avg win length
                       </div>
-                      <div className="text-lg font-bold">{formatDuration(Math.floor(analytics.avgWinDuration))}</div>
+                      <div className="text-lg font-bold">
+                        {formatDuration(Math.floor(analytics.avgWinDuration))}
+                      </div>
                     </div>
                     <div className="rounded-lg bg-background/40 border border-border/40 p-3">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                         <Clock className="w-3.5 h-3.5" /> Avg loss length
                       </div>
-                      <div className="text-lg font-bold">{formatDuration(Math.floor(analytics.avgLossDuration))}</div>
+                      <div className="text-lg font-bold">
+                        {formatDuration(Math.floor(analytics.avgLossDuration))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -381,13 +440,19 @@ export default function PlayerAnalysisPage() {
                 <HighlightCard
                   title="Strongest Civs"
                   icon={<CheckCircle2 className="w-4 h-4 text-green-400" />}
-                  items={analytics.strongestCivs.map((c) => ({ ...c, key: titleCase(c.key) }))}
+                  items={analytics.strongestCivs.map((c) => ({
+                    ...c,
+                    key: titleCase(c.key),
+                  }))}
                   positive
                 />
                 <HighlightCard
                   title="Weakest Civs"
                   icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
-                  items={analytics.weakestCivs.map((c) => ({ ...c, key: titleCase(c.key) }))}
+                  items={analytics.weakestCivs.map((c) => ({
+                    ...c,
+                    key: titleCase(c.key),
+                  }))}
                   positive={false}
                 />
               </div>
@@ -410,7 +475,11 @@ export default function PlayerAnalysisPage() {
                     </div>
                     <div className="space-y-2">
                       {analytics.bestMatchups.map((m) => (
-                        <MatchupRow key={m.key} stat={{ ...m, key: titleCase(m.key) }} positive />
+                        <MatchupRow
+                          key={m.key}
+                          stat={{ ...m, key: titleCase(m.key) }}
+                          positive
+                        />
                       ))}
                     </div>
                   </div>
@@ -421,7 +490,11 @@ export default function PlayerAnalysisPage() {
                     </div>
                     <div className="space-y-2">
                       {analytics.worstMatchups.map((m) => (
-                        <MatchupRow key={m.key} stat={{ ...m, key: titleCase(m.key) }} positive={false} />
+                        <MatchupRow
+                          key={m.key}
+                          stat={{ ...m, key: titleCase(m.key) }}
+                          positive={false}
+                        />
                       ))}
                     </div>
                   </div>
@@ -472,7 +545,9 @@ export default function PlayerAnalysisPage() {
                       oppCiv={oppCiv}
                       ratingDiff={myData!.rating_diff}
                       expanded={expandedLoss === idx}
-                      onToggle={() => setExpandedLoss(expandedLoss === idx ? null : idx)}
+                      onToggle={() =>
+                        setExpandedLoss(expandedLoss === idx ? null : idx)
+                      }
                     />
                   ))}
                 </div>
@@ -485,7 +560,10 @@ export default function PlayerAnalysisPage() {
                   <TrendingUp className="w-4 h-4 text-primary" />
                   Room for Improvement
                 </h2>
-                <ImprovementInsights analytics={analytics} streak={modeStats?.streak} />
+                <ImprovementInsights
+                  analytics={analytics}
+                  streak={modeStats?.streak}
+                />
               </section>
             )}
           </>
