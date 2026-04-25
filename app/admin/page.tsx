@@ -203,6 +203,11 @@ export default function AdminPage() {
   );
   const [generatedSeed, setGeneratedSeed] = useState<string | null>(null);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
 
   // Hydrate from sessionStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -540,7 +545,7 @@ export default function AdminPage() {
         label: team1Players[i]?.name || `Team 1 Player ${i + 1}`,
         role: `team1_p${i}`,
         color: "blue",
-        url: `${generatedUrl}&role=team1_p${i}`,
+        url: `${origin}${generatedUrl}&role=team1_p${i}`,
       });
     }
     for (let i = 0; i < teamSize; i++) {
@@ -548,18 +553,18 @@ export default function AdminPage() {
         label: team2Players[i]?.name || `Team 2 Player ${i + 1}`,
         role: `team2_p${i}`,
         color: "red",
-        url: `${generatedUrl}&role=team2_p${i}`,
+        url: `${origin}${generatedUrl}&role=team2_p${i}`,
       });
     }
     links.push({
       label: "Spectator",
       role: "spectator",
       color: "gray",
-      url: `${generatedUrl}&role=spectator`,
+      url: `${origin}${generatedUrl}&role=spectator`,
     });
 
     return links;
-  }, [generatedUrl, teamSize, team1Players, team2Players]);
+  }, [generatedUrl, teamSize, team1Players, team2Players, origin]);
 
   const [showCivPool, setShowCivPool] = useState(false);
   const [showMapPool, setShowMapPool] = useState(false);
