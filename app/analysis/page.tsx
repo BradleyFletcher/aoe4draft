@@ -16,6 +16,9 @@ import {
   Swords,
   Loader2,
   User,
+  Users,
+  Shield,
+  BarChart2,
 } from "lucide-react";
 import {
   AOE4WorldAPI,
@@ -168,6 +171,22 @@ export default function PlayerAnalysisPage() {
     let totalLosses = 0;
     const recentResults: ("W" | "L")[] = [];
 
+    // Team-specific
+    const teammateStats = new Map<
+      string,
+      {
+        wins: number;
+        losses: number;
+        profileId: number;
+        rating: number[];
+        avatar?: string;
+      }
+    >();
+    const formatStats = new Map<string, { wins: number; losses: number }>();
+    const civSynergyStats = new Map<string, { wins: number; losses: number }>();
+    const teamRatingWins: number[] = [];
+    const teamRatingLosses: number[] = [];
+
     for (const game of recentGames) {
       let myResult: "win" | "loss" | null = null;
       let myCiv: string | null = null;
@@ -208,6 +227,50 @@ export default function PlayerAnalysisPage() {
         lossDurations.push(game.duration);
       }
       recentResults.push(myResult === "win" ? "W" : "L");
+
+      // Team stats
+      bump(formatStats, game.kind);
+      const teammates = game.teams[myTeamIdx].filter(
+        (e) => e.player.profile_id !== profileId,
+      );
+      const teamRatings: number[] = [];
+      for (const e of teammates) {
+        const p = e.player as {
+          profile_id: number;
+          name: string;
+          result: string;
+          civilization: string;
+          rating?: number;
+          avatars?: { small?: string };
+        };
+        const key = p.name;
+        if (!teammateStats.has(key)) {
+          teammateStats.set(key, {
+            wins: 0,
+            losses: 0,
+            profileId: p.profile_id,
+            rating: [],
+            avatar: p.avatars?.small,
+          });
+        }
+        const ts = teammateStats.get(key)!;
+        if (myResult === "win") ts.wins++;
+        else ts.losses++;
+        if (p.rating) {
+          ts.rating.push(p.rating);
+          teamRatings.push(p.rating);
+        }
+        // Civ synergy: my civ + teammate civ
+        const combo = [myCiv!, p.civilization].sort().join(" + ");
+        bump(civSynergyStats, combo);
+      }
+      const avgTeamRating = teamRatings.length
+        ? teamRatings.reduce((a, b) => a + b, 0) / teamRatings.length
+        : 0;
+      if (avgTeamRating > 0) {
+        if (myResult === "win") teamRatingWins.push(avgTeamRating);
+        else teamRatingLosses.push(avgTeamRating);
+      }
     }
 
     const toSorted = (
@@ -228,15 +291,47 @@ export default function PlayerAnalysisPage() {
     const maps = toSorted(mapStats, 2);
     const civs = toSorted(civStats, 2);
     const vsCivs = toSorted(vsCivStats, 2);
+    const formats = toSorted(formatStats, 1);
+    const civSynergies = toSorted(civSynergyStats, 2);
+
     const avg = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     const byWR = (arr: AggregatedStat[]) =>
       [...arr].sort((a, b) => b.winRate - a.winRate);
 
+    // Teammate summaries
+    const teammates = Array.from(teammateStats.entries())
+      .map(([name, s]) => ({
+        name,
+        profileId: s.profileId,
+        wins: s.wins,
+        losses: s.losses,
+        total: s.wins + s.losses,
+        winRate: (s.wins / (s.wins + s.losses)) * 100,
+        avgRating: s.rating.length ? Math.round(avg(s.rating)) : 0,
+        avatar: s.avatar,
+      }))
+      .filter((t) => t.total >= 2)
+      .sort((a, b) => b.total - a.total);
+
     return {
       maps,
       civs,
       vsCivs,
+      formats,
+      civSynergies,
+      teammates,
+      mostPlayedTeammates: teammates.slice(0, 5),
+      bestTeammates: [...teammates]
+        .filter((t) => t.total >= 3)
+        .sort((a, b) => b.winRate - a.winRate)
+        .slice(0, 5),
+      worstTeammates: [...teammates]
+        .filter((t) => t.total >= 3)
+        .sort((a, b) => a.winRate - b.winRate)
+        .slice(0, 5),
+      avgTeamRatingWins: avg(teamRatingWins),
+      avgTeamRatingLosses: avg(teamRatingLosses),
       totalWins,
       totalLosses,
       winRate:
@@ -565,6 +660,230 @@ export default function PlayerAnalysisPage() {
                   </div>
                 </div>
               </section>
+            )}
+
+            {/* ── TEAM-ONLY SECTIONS ── */}
+            {analytics && mode === "rm_team" && (
+              <>
+                {/* Game format breakdown */}
+                {analytics.formats.length > 0 && (
+                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
+                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                      <BarChart2 className="w-4 h-4 text-primary" />
+                      Format Breakdown
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {analytics.formats.map((f) => {
+                        const total = f.wins + f.losses;
+                        const wr = (f.wins / total) * 100;
+                        return (
+                          <div
+                            key={f.key}
+                            className="rounded-lg bg-background/40 border border-border/40 p-3 text-center"
+                          >
+                            <div className="text-sm font-bold uppercase tracking-wide mb-1">
+                              {f.key.replace("rm_", "").replace("v", "v")}
+                            </div>
+                            <div
+                              className={`text-xl font-bold ${wr >= 50 ? "text-green-400" : "text-red-400"}`}
+                            >
+                              {wr.toFixed(0)}%
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {f.wins}W – {f.losses}L
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                {/* Team rating insight */}
+                {(analytics.avgTeamRatingWins > 0 ||
+                  analytics.avgTeamRatingLosses > 0) && (
+                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
+                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-primary" />
+                      Teammate Quality Impact
+                    </h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="rounded-lg bg-green-500/5 border border-green-500/20 p-4 text-center">
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Avg teammate rating in{" "}
+                          <span className="text-green-400 font-medium">
+                            wins
+                          </span>
+                        </div>
+                        <div className="text-2xl font-bold text-green-400">
+                          {Math.round(analytics.avgTeamRatingWins)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-red-500/5 border border-red-500/20 p-4 text-center">
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Avg teammate rating in{" "}
+                          <span className="text-red-400 font-medium">
+                            losses
+                          </span>
+                        </div>
+                        <div className="text-2xl font-bold text-red-400">
+                          {Math.round(analytics.avgTeamRatingLosses)}
+                        </div>
+                      </div>
+                    </div>
+                    {analytics.avgTeamRatingWins > 0 &&
+                      analytics.avgTeamRatingLosses > 0 && (
+                        <p className="text-xs text-muted-foreground mt-3 text-center">
+                          {analytics.avgTeamRatingWins >
+                          analytics.avgTeamRatingLosses
+                            ? `Wins happen with teammates ~${Math.round(analytics.avgTeamRatingWins - analytics.avgTeamRatingLosses)} rating higher — strong correlation with teammate quality.`
+                            : `Teammate rating has minimal impact on outcomes — performance is consistent regardless of team strength.`}
+                        </p>
+                      )}
+                  </section>
+                )}
+
+                {/* Teammates */}
+                {analytics.mostPlayedTeammates.length > 0 && (
+                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
+                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-primary" />
+                      Teammates
+                      <span className="text-xs text-muted-foreground font-normal">
+                        (min 2 games together)
+                      </span>
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Most played */}
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5" /> Most Played With
+                        </div>
+                        <div className="space-y-2">
+                          {analytics.mostPlayedTeammates.map((t) => (
+                            <div
+                              key={t.name}
+                              className="flex items-center gap-3 rounded-lg bg-background/40 border border-border/40 px-3 py-2"
+                            >
+                              <div className="w-7 h-7 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {t.avatar ? (
+                                  <img
+                                    src={
+                                      t.avatar.startsWith("http")
+                                        ? t.avatar
+                                        : `https:${t.avatar}`
+                                    }
+                                    alt={t.name}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+                                    }}
+                                  />
+                                ) : (
+                                  <User className="w-3.5 h-3.5 text-muted-foreground" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {t.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {t.total} games{" "}
+                                  {t.avgRating > 0 &&
+                                    `• ~${t.avgRating} rating`}
+                                </div>
+                              </div>
+                              <div
+                                className={`text-sm font-bold tabular-nums ${t.winRate >= 55 ? "text-green-400" : t.winRate <= 45 ? "text-red-400" : "text-foreground"}`}
+                              >
+                                {t.winRate.toFixed(0)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Best & worst by WR */}
+                      <div className="space-y-4">
+                        {analytics.bestTeammates.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-green-400 mb-2 flex items-center gap-1.5">
+                              <TrendingUp className="w-3.5 h-3.5" /> Best Win
+                              Rate With
+                            </div>
+                            <div className="space-y-1.5">
+                              {analytics.bestTeammates.slice(0, 3).map((t) => (
+                                <div
+                                  key={t.name}
+                                  className="flex items-center justify-between text-xs rounded bg-green-500/5 border border-green-500/15 px-3 py-1.5"
+                                >
+                                  <span className="font-medium truncate mr-2">
+                                    {t.name}
+                                  </span>
+                                  <span className="text-green-400 font-bold tabular-nums flex-shrink-0">
+                                    {t.winRate.toFixed(0)}%{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                      ({t.total}g)
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {analytics.worstTeammates.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1.5">
+                              <TrendingDown className="w-3.5 h-3.5" /> Lowest
+                              Win Rate With
+                            </div>
+                            <div className="space-y-1.5">
+                              {analytics.worstTeammates.slice(0, 3).map((t) => (
+                                <div
+                                  key={t.name}
+                                  className="flex items-center justify-between text-xs rounded bg-red-500/5 border border-red-500/15 px-3 py-1.5"
+                                >
+                                  <span className="font-medium truncate mr-2">
+                                    {t.name}
+                                  </span>
+                                  <span className="text-red-400 font-bold tabular-nums flex-shrink-0">
+                                    {t.winRate.toFixed(0)}%{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                      ({t.total}g)
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* Civ synergies */}
+                {analytics.civSynergies.length > 0 && (
+                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
+                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary" />
+                      Civ Synergies
+                      <span className="text-xs text-muted-foreground font-normal">
+                        (your civ + teammate civ combos)
+                      </span>
+                    </h2>
+                    <div className="space-y-2">
+                      {analytics.civSynergies.slice(0, 8).map((s) => (
+                        <PerfBar
+                          key={s.key}
+                          label={s.key.split(" + ").map(titleCase).join(" + ")}
+                          stat={s}
+                          color="blue"
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
             )}
 
             {analytics && (
