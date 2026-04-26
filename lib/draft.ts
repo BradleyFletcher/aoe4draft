@@ -421,8 +421,17 @@ export function resolveAutoStep(state: DraftState): {
   const step = getCurrentStep(state);
   if (!step?.auto) return { state, pickedId: null };
 
-  const available =
-    step.target === "civ" ? getAvailableCivs(state) : getAvailableMaps(state);
+  let available: string[];
+  if (step.target === "civ") {
+    available = getAvailableCivs(state);
+  } else {
+    // For auto map picks (e.g. random odd map), exclude ALL bans from both teams
+    // regardless of ban mode, since the random pick is neutral
+    const allPicked = getAllTeamItems(state, "map", "picks");
+    const allBanned = getAllTeamItems(state, "map", "bans");
+    available = filterPool(state.config.mapPool, [allPicked, allBanned]);
+  }
+
   if (available.length === 0) return { state, pickedId: null };
 
   const randomId = available[Math.floor(Math.random() * available.length)];
