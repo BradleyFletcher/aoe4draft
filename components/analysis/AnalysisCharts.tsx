@@ -135,13 +135,13 @@ export function PerfBarChart({ data, maxItems = 10 }: PerfChartProps) {
   return (
     <ResponsiveContainer
       width="100%"
-      height={Math.max(180, sliced.length * 36)}
+      height={Math.max(200, sliced.length * 48)}
     >
       <BarChart
         data={sliced}
         layout="vertical"
-        margin={{ top: 4, right: 48, bottom: 4, left: 4 }}
-        barCategoryGap="30%"
+        margin={{ top: 4, right: 52, bottom: 4, left: 4 }}
+        barCategoryGap="35%"
       >
         <CartesianGrid
           strokeDasharray="3 3"
@@ -159,7 +159,7 @@ export function PerfBarChart({ data, maxItems = 10 }: PerfChartProps) {
         <YAxis
           type="category"
           dataKey="name"
-          width={110}
+          width={160}
           tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
           tickLine={false}
           axisLine={false}
@@ -211,25 +211,23 @@ interface MatchupChartProps {
 }
 
 export function MatchupBarChart({ data, maxItems = 8 }: MatchupChartProps) {
-  const sliced = data
-    .slice(0, maxItems)
-    .map((s) => ({
-      name: s.key,
-      Wins: s.wins,
-      Losses: s.losses,
-      total: s.total,
-    }));
+  const sliced = data.slice(0, maxItems).map((s) => ({
+    name: s.key,
+    Wins: s.wins,
+    Losses: s.losses,
+    total: s.total,
+  }));
 
   return (
     <ResponsiveContainer
       width="100%"
-      height={Math.max(180, sliced.length * 40)}
+      height={Math.max(200, sliced.length * 48)}
     >
       <BarChart
         data={sliced}
         layout="vertical"
         margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
-        barCategoryGap="25%"
+        barCategoryGap="30%"
         barGap={2}
       >
         <CartesianGrid
@@ -246,7 +244,7 @@ export function MatchupBarChart({ data, maxItems = 8 }: MatchupChartProps) {
         <YAxis
           type="category"
           dataKey="name"
-          width={110}
+          width={150}
           tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
           tickLine={false}
           axisLine={false}

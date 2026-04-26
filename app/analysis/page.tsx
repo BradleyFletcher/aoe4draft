@@ -456,8 +456,8 @@ export default function PlayerAnalysisPage() {
       wr >= 55 ? "bg-green-500" : wr <= 45 ? "bg-red-500" : "bg-blue-400";
     const av = avatarSrc(t.avatar);
     return (
-      <div className="flex items-center gap-3 py-2 border-b border-border/30 last:border-0">
-        <div className="w-7 h-7 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="flex items-start gap-3 py-3 border-b border-border/20 last:border-0">
+        <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0 mt-0.5">
           {av ? (
             <img
               src={av}
@@ -468,29 +468,27 @@ export default function PlayerAnalysisPage() {
               }}
             />
           ) : (
-            <User className="w-3.5 h-3.5 text-muted-foreground" />
+            <User className="w-4 h-4 text-muted-foreground" />
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-sm font-medium truncate">{t.name}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold truncate">{t.name}</span>
             <span
-              className={`text-sm font-bold tabular-nums flex-shrink-0 ${wrClass}`}
+              className={`text-base font-bold tabular-nums flex-shrink-0 ${wrClass}`}
             >
               {wr.toFixed(0)}%
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1 bg-border/40 rounded-full overflow-hidden">
-              <div
-                className={`h-full ${barColor}`}
-                style={{ width: `${wr}%` }}
-              />
-            </div>
-            <span className="text-[11px] text-muted-foreground flex-shrink-0">
-              {t.wins}W–{t.losses}L · {t.total}g
-              {t.avgRating > 0 && ` · ${t.avgRating}`}
-            </span>
+          <div className="mt-1.5 h-1.5 bg-border/30 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full ${barColor}`}
+              style={{ width: `${wr}%` }}
+            />
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {t.wins}W – {t.losses}L · {t.total} games
+            {t.avgRating > 0 && ` · ${t.avgRating} avg rating`}
           </div>
         </div>
       </div>
@@ -889,13 +887,13 @@ export default function PlayerAnalysisPage() {
 
                     {/* Teammates full-width table */}
                     {analytics.teammates.length > 0 && (
-                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                      <div className="rounded-xl bg-card border border-border/50 p-6 mb-4">
                         <SectionTitle
                           icon={<Users className="w-4 h-4 text-primary" />}
                           label="Teammates"
                           sub="min 2 games · sorted by games played"
                         />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12">
                           {analytics.teammates.slice(0, 12).map((t) => (
                             <TeammateRow key={t.name} t={t} />
                           ))}
