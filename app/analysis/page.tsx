@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -14,8 +14,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   Swords,
+  Loader2,
+  User,
 } from "lucide-react";
-import { AOE4WorldAPI, type AOE4PlayerStats, type Game } from "@/lib/aoe4world";
+import {
+  AOE4WorldAPI,
+  type AOE4PlayerStats,
+  type AOE4Player,
+  type Game,
+} from "@/lib/aoe4world";
 import RankBadge from "@/components/RankBadge";
 import {
   titleCase,
@@ -35,6 +42,12 @@ type GameMode = "rm_solo" | "rm_team";
 
 export default function PlayerAnalysisPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<AOE4Player[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
   const [playerData, setPlayerData] = useState<AOE4PlayerStats | null>(null);
   const [recentGames, setRecentGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,8 +58,58 @@ export default function PlayerAnalysisPage() {
   const [mode, setMode] = useState<GameMode>("rm_solo");
   const [expandedLoss, setExpandedLoss] = useState<number | null>(null);
 
-  const SEASON_START = "2026-01-01"; // Season 12 start
+  const SEASON_START = "2026-01-01";
   const LIMIT = 50;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    setSearchOpen(false);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimeout.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const results = await AOE4WorldAPI.searchPlayers(q);
+        setSearchResults(results);
+        setSearchOpen(results.length > 0);
+      } catch {
+        /* ignore */
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+  };
+
+  const selectPlayerFromSearch = async (player: AOE4Player) => {
+    setSearchQuery(player.name);
+    setSearchOpen(false);
+    setSearchResults([]);
+    setLoading(true);
+    try {
+      const stats = await AOE4WorldAPI.getPlayerStats(player.profile_id);
+      setPlayerData(stats);
+      await loadGames(player.profile_id, mode);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadGames = async (profileId: number, leaderboard: GameMode) => {
     setLoadingProgress(null);
@@ -82,24 +145,6 @@ export default function PlayerAnalysisPage() {
     const allGames = [...firstBatch, ...rest.flat()];
     setRecentGames(allGames);
     setLoadingProgress(null);
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setLoading(true);
-    try {
-      const results = await AOE4WorldAPI.searchPlayers(searchQuery);
-      if (results && results.length > 0) {
-        const profileId = results[0].profile_id;
-        const stats = await AOE4WorldAPI.getPlayerStats(profileId);
-        setPlayerData(stats);
-        await loadGames(profileId, mode);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleModeChange = async (newMode: GameMode) => {
@@ -271,25 +316,70 @@ export default function PlayerAnalysisPage() {
             Deep stats, matchup analysis, and improvement insights from recent
             matches
           </p>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          <div ref={searchRef} className="relative">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search for a player..."
+                placeholder="Type a player name to search..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="w-full pl-10 pr-4 py-2.5 bg-background/60 border border-border/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+                onChange={handleQueryChange}
+                onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+                className="w-full pl-10 pr-10 py-2.5 bg-background/60 border border-border/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
               />
+              {searchLoading && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+              )}
             </div>
-            <button
-              onClick={handleSearch}
-              disabled={loading}
-              className="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? "Loading..." : "Analyze"}
-            </button>
+            {searchOpen && searchResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-xl max-h-72 overflow-y-auto">
+                {searchResults.map((player) => (
+                  <button
+                    key={player.profile_id}
+                    onClick={() => selectPlayerFromSearch(player)}
+                    className="w-full px-3 py-2.5 text-left hover:bg-accent flex items-center gap-3 transition-colors border-b border-border/30 last:border-0"
+                  >
+                    <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {player.avatars?.small ? (
+                        <img
+                          src={
+                            player.avatars.small.startsWith("http")
+                              ? player.avatars.small
+                              : `https:${player.avatars.small}`
+                          }
+                          alt={player.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">
+                          {player.name}
+                        </span>
+                        {player.country && (
+                          <span className="text-xs flex-shrink-0">
+                            {AOE4WorldAPI.getCountryFlag(player.country)}
+                          </span>
+                        )}
+                      </div>
+                      {player.rating != null && (
+                        <div className="text-xs text-muted-foreground">
+                          {player.rating} rating
+                          {player.win_rate != null &&
+                            ` • ${AOE4WorldAPI.formatWinRate(player.win_rate)} WR`}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {loadingProgress && (
             <div className="mt-3 space-y-1.5">
