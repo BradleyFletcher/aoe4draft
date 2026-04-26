@@ -40,6 +40,12 @@ import {
 } from "@/components/analysis/PerfBar";
 import { LossRow } from "@/components/analysis/LossRow";
 import { ImprovementInsights } from "@/components/analysis/Insights";
+import {
+  WinRateChart,
+  PerfBarChart,
+  MatchupBarChart,
+  FormatDonutChart,
+} from "@/components/analysis/AnalysisCharts";
 
 type GameMode = "rm_solo" | "rm_team";
 
@@ -611,33 +617,14 @@ export default function PlayerAnalysisPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <div className="text-xs text-muted-foreground mb-2">
-                      Result timeline (newest first)
+                      Rolling 10-game win rate
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {analytics.recentResults.slice(0, 20).map((r, i) => (
-                        <div
-                          key={i}
-                          className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
-                            r === "W"
-                              ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                              : "bg-red-500/20 text-red-400 border border-red-500/30"
-                          }`}
-                        >
-                          {r}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3 h-2 bg-background/60 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${analytics.winRate >= 50 ? "bg-green-500" : "bg-red-500"}`}
-                        style={{ width: `${analytics.winRate}%` }}
-                      />
-                    </div>
+                    <WinRateChart results={analytics.recentResults} />
                     <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
                       <span>
                         {analytics.totalWins}W - {analytics.totalLosses}L
                       </span>
-                      <span>{analytics.winRate.toFixed(0)}%</span>
+                      <span>{analytics.winRate.toFixed(0)}% overall</span>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -672,30 +659,7 @@ export default function PlayerAnalysisPage() {
                       <BarChart2 className="w-4 h-4 text-primary" />
                       Format Breakdown
                     </h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {analytics.formats.map((f) => {
-                        const total = f.wins + f.losses;
-                        const wr = (f.wins / total) * 100;
-                        return (
-                          <div
-                            key={f.key}
-                            className="rounded-lg bg-background/40 border border-border/40 p-3 text-center"
-                          >
-                            <div className="text-sm font-bold uppercase tracking-wide mb-1">
-                              {f.key.replace("rm_", "").replace("v", "v")}
-                            </div>
-                            <div
-                              className={`text-xl font-bold ${wr >= 50 ? "text-green-400" : "text-red-400"}`}
-                            >
-                              {wr.toFixed(0)}%
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {f.wins}W – {f.losses}L
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <FormatDonutChart formats={analytics.formats} />
                   </section>
                 )}
 
@@ -871,16 +835,15 @@ export default function PlayerAnalysisPage() {
                         (your civ + teammate civ combos)
                       </span>
                     </h2>
-                    <div className="space-y-2">
-                      {analytics.civSynergies.slice(0, 8).map((s) => (
-                        <PerfBar
-                          key={s.key}
-                          label={s.key.split(" + ").map(titleCase).join(" + ")}
-                          stat={s}
-                          color="blue"
-                        />
-                      ))}
-                    </div>
+                    <PerfBarChart
+                      data={analytics.civSynergies
+                        .slice(0, 8)
+                        .map((s) => ({
+                          ...s,
+                          key: s.key.split(" + ").map(titleCase).join(" + "),
+                        }))}
+                      maxItems={8}
+                    />
                   </section>
                 )}
               </>
@@ -927,41 +890,16 @@ export default function PlayerAnalysisPage() {
                   <Swords className="w-4 h-4 text-primary" />
                   Matchup Analysis
                   <span className="text-xs text-muted-foreground font-normal">
-                    (performance vs opponent civs)
+                    (win rate vs opponent civs, min 2 games)
                   </span>
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs font-medium text-green-400 mb-2 flex items-center gap-1.5">
-                      <TrendingUp className="w-3.5 h-3.5" />
-                      Favorable Matchups
-                    </div>
-                    <div className="space-y-2">
-                      {analytics.bestMatchups.map((m) => (
-                        <MatchupRow
-                          key={m.key}
-                          stat={{ ...m, key: titleCase(m.key) }}
-                          positive
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1.5">
-                      <TrendingDown className="w-3.5 h-3.5" />
-                      Tough Matchups
-                    </div>
-                    <div className="space-y-2">
-                      {analytics.worstMatchups.map((m) => (
-                        <MatchupRow
-                          key={m.key}
-                          stat={{ ...m, key: titleCase(m.key) }}
-                          positive={false}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <MatchupBarChart
+                  data={analytics.vsCivs.map((m) => ({
+                    ...m,
+                    key: titleCase(m.key),
+                  }))}
+                  maxItems={12}
+                />
               </section>
             )}
 
@@ -971,11 +909,12 @@ export default function PlayerAnalysisPage() {
                   <Target className="w-4 h-4 text-primary" />
                   Civilization Performance
                 </h2>
-                <div className="space-y-2">
-                  {analytics.civs.map((c) => (
-                    <PerfBar key={c.key} label={titleCase(c.key)} stat={c} />
-                  ))}
-                </div>
+                <PerfBarChart
+                  data={analytics.civs.map((c) => ({
+                    ...c,
+                    key: titleCase(c.key),
+                  }))}
+                />
               </section>
             )}
 
@@ -985,11 +924,7 @@ export default function PlayerAnalysisPage() {
                   <Target className="w-4 h-4 text-primary" />
                   Map Performance
                 </h2>
-                <div className="space-y-2">
-                  {analytics.maps.map((m) => (
-                    <PerfBar key={m.key} label={m.key} stat={m} color="blue" />
-                  ))}
-                </div>
+                <PerfBarChart data={analytics.maps} />
               </section>
             )}
 
