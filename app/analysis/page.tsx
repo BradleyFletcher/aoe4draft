@@ -4,21 +4,17 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Search,
-  TrendingUp,
-  TrendingDown,
-  Trophy,
   ArrowLeft,
   Clock,
   Target,
   Zap,
-  AlertTriangle,
-  CheckCircle2,
   Swords,
   Loader2,
   User,
   Users,
   Shield,
   BarChart2,
+  TrendingUp,
 } from "lucide-react";
 import {
   AOE4WorldAPI,
@@ -32,14 +28,6 @@ import {
   formatDuration,
   type AggregatedStat,
 } from "@/components/analysis/helpers";
-import { StatCard } from "@/components/analysis/StatCard";
-import {
-  PerfBar,
-  MatchupRow,
-  HighlightCard,
-} from "@/components/analysis/PerfBar";
-import { LossRow } from "@/components/analysis/LossRow";
-import { ImprovementInsights } from "@/components/analysis/Insights";
 import {
   WinRateChart,
   PerfBarChart,
@@ -398,99 +386,204 @@ export default function PlayerAnalysisPage() {
 
   const modeStats = playerData?.modes?.[mode];
 
+  // ── helpers ──────────────────────────────────────────────────────────────
+  const avatarSrc = (url?: string) =>
+    !url ? null : url.startsWith("http") ? url : `https:${url}`;
+
+  const SectionTitle = ({
+    icon,
+    label,
+    sub,
+  }: {
+    icon: React.ReactNode;
+    label: string;
+    sub?: string;
+  }) => (
+    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+      {icon}
+      {label}
+      {sub && (
+        <span className="text-xs text-muted-foreground font-normal">{sub}</span>
+      )}
+    </h2>
+  );
+
+  const StatPill = ({
+    label,
+    value,
+    valueClass = "",
+    sub,
+  }: {
+    label: string;
+    value: string;
+    valueClass?: string;
+    sub?: string;
+  }) => (
+    <div className="rounded-lg bg-background/50 border border-border/40 px-4 py-3">
+      <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </div>
+      <div className={`text-xl font-bold tabular-nums ${valueClass}`}>
+        {value}
+      </div>
+      {sub && (
+        <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
+      )}
+    </div>
+  );
+
+  const TeammateRow = ({
+    t,
+  }: {
+    t: {
+      name: string;
+      total: number;
+      wins: number;
+      losses: number;
+      winRate: number;
+      avgRating: number;
+      avatar?: string;
+    };
+  }) => {
+    const wr = t.winRate;
+    const wrClass =
+      wr >= 55
+        ? "text-green-400"
+        : wr <= 45
+          ? "text-red-400"
+          : "text-foreground";
+    const barColor =
+      wr >= 55 ? "bg-green-500" : wr <= 45 ? "bg-red-500" : "bg-blue-400";
+    const av = avatarSrc(t.avatar);
+    return (
+      <div className="flex items-center gap-3 py-2 border-b border-border/30 last:border-0">
+        <div className="w-7 h-7 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+          {av ? (
+            <img
+              src={av}
+              alt={t.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            <User className="w-3.5 h-3.5 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-sm font-medium truncate">{t.name}</span>
+            <span
+              className={`text-sm font-bold tabular-nums flex-shrink-0 ${wrClass}`}
+            >
+              {wr.toFixed(0)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1 bg-border/40 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${barColor}`}
+                style={{ width: `${wr}%` }}
+              />
+            </div>
+            <span className="text-[11px] text-muted-foreground flex-shrink-0">
+              {t.wins}W–{t.losses}L · {t.total}g
+              {t.avgRating > 0 && ` · ${t.avgRating}`}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <main className="min-h-screen px-4 pb-8 md:px-8">
-      <div className="max-w-5xl mx-auto">
-        <div className="mb-6 mt-2">
+    <main className="min-h-screen px-4 pb-12 md:px-8">
+      <div className="max-w-4xl mx-auto">
+        {/* ── Top bar ── */}
+        <div className="flex items-center justify-between py-4 mb-2">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Home
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
           </Link>
+          <h1 className="text-sm font-semibold text-muted-foreground">
+            Player Analysis
+          </h1>
+          <div className="w-10" />
         </div>
 
-        <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-          <h1 className="text-xl font-bold mb-1">Player Analysis</h1>
-          <p className="text-xs text-muted-foreground mb-4">
-            Deep stats, matchup analysis, and improvement insights from recent
-            matches
-          </p>
-          <div ref={searchRef} className="relative">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Type a player name to search..."
-                value={searchQuery}
-                onChange={handleQueryChange}
-                onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
-                className="w-full pl-10 pr-10 py-2.5 bg-background/60 border border-border/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
-              />
-              {searchLoading && (
-                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            {searchOpen && searchResults.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-xl max-h-72 overflow-y-auto">
-                {searchResults.map((player) => (
-                  <button
-                    key={player.profile_id}
-                    onClick={() => selectPlayerFromSearch(player)}
-                    className="w-full px-3 py-2.5 text-left hover:bg-accent flex items-center gap-3 transition-colors border-b border-border/30 last:border-0"
-                  >
-                    <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {player.avatars?.small ? (
-                        <img
-                          src={
-                            player.avatars.small.startsWith("http")
-                              ? player.avatars.small
-                              : `https:${player.avatars.small}`
-                          }
-                          alt={player.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <User className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">
-                          {player.name}
-                        </span>
-                        {player.country && (
-                          <span className="text-xs flex-shrink-0">
-                            {AOE4WorldAPI.getCountryFlag(player.country)}
-                          </span>
-                        )}
-                      </div>
-                      {player.rating != null && (
-                        <div className="text-xs text-muted-foreground">
-                          {player.rating} rating
-                          {player.win_rate != null &&
-                            ` • ${AOE4WorldAPI.formatWinRate(player.win_rate)} WR`}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
+        {/* ── Search ── */}
+        <div ref={searchRef} className="relative mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search for a player..."
+              value={searchQuery}
+              onChange={handleQueryChange}
+              onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+              className="w-full pl-10 pr-10 py-3 bg-card border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+            />
+            {searchLoading && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
             )}
           </div>
+          {searchOpen && searchResults.length > 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-xl max-h-72 overflow-y-auto">
+              {searchResults.map((player) => (
+                <button
+                  key={player.profile_id}
+                  onClick={() => selectPlayerFromSearch(player)}
+                  className="w-full px-3 py-2.5 text-left hover:bg-accent flex items-center gap-3 transition-colors border-b border-border/30 last:border-0"
+                >
+                  <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {player.avatars?.small ? (
+                      <img
+                        src={avatarSrc(player.avatars.small)!}
+                        alt={player.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm truncate">
+                        {player.name}
+                      </span>
+                      {player.country && (
+                        <span className="text-xs">
+                          {AOE4WorldAPI.getCountryFlag(player.country)}
+                        </span>
+                      )}
+                    </div>
+                    {player.rating != null && (
+                      <div className="text-xs text-muted-foreground">
+                        {player.rating} rating
+                        {player.win_rate != null &&
+                          ` · ${AOE4WorldAPI.formatWinRate(player.win_rate)} WR`}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
           {loadingProgress && (
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-2 space-y-1">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Fetching season games...</span>
+                <span>Loading season data…</span>
                 <span>
                   {loadingProgress.loaded} / {loadingProgress.total}
                 </span>
               </div>
-              <div className="h-1 bg-background/60 rounded-full overflow-hidden">
+              <div className="h-1 bg-border/40 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary transition-all duration-300"
                   style={{
@@ -500,99 +593,107 @@ export default function PlayerAnalysisPage() {
               </div>
             </div>
           )}
-        </section>
+        </div>
 
+        {/* ── Empty state ── */}
+        {!playerData && !loading && (
+          <div className="rounded-xl bg-card border border-border/50 p-16 text-center">
+            <Search className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">
+              Search for a player above to begin
+            </p>
+          </div>
+        )}
+
+        {/* ── Player loaded ── */}
         {playerData && (
           <>
-            <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-4">
-                  {playerData.avatars?.medium && (
-                    <img
-                      src={playerData.avatars.medium}
-                      alt={playerData.name}
-                      className="w-14 h-14 rounded-lg border border-border/50"
-                    />
-                  )}
-                  <div>
-                    <h2 className="text-xl font-bold leading-tight">
-                      {playerData.name}
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {AOE4WorldAPI.getCountryFlag(playerData.country)}{" "}
-                      {playerData.country?.toUpperCase()}
-                      {" • "}
-                      <a
-                        href={playerData.site_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        View Profile
-                      </a>
-                    </p>
+            {/* ── Player header + mode toggle ── */}
+            <div className="rounded-xl bg-card border border-border/50 p-5 mb-4 flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                {playerData.avatars?.medium && (
+                  <img
+                    src={playerData.avatars.medium}
+                    alt={playerData.name}
+                    className="w-12 h-12 rounded-lg border border-border/50"
+                  />
+                )}
+                <div>
+                  <div className="text-lg font-bold leading-tight">
+                    {playerData.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                    {playerData.country && (
+                      <span>
+                        {AOE4WorldAPI.getCountryFlag(playerData.country)}{" "}
+                        {playerData.country.toUpperCase()}
+                      </span>
+                    )}
+                    <a
+                      href={playerData.site_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      View on AOE4World
+                    </a>
                   </div>
                 </div>
-                <div className="inline-flex rounded-lg border border-border/50 bg-background/40 p-0.5">
-                  <button
-                    onClick={() => handleModeChange("rm_solo")}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      mode === "rm_solo"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    1v1 Ranked
-                  </button>
-                  <button
-                    onClick={() => handleModeChange("rm_team")}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      mode === "rm_team"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Team Ranked
-                  </button>
-                </div>
               </div>
-            </section>
+              <div className="inline-flex rounded-lg border border-border/50 bg-background/40 p-0.5">
+                {(["rm_solo", "rm_team"] as GameMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => handleModeChange(m)}
+                    className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {m === "rm_solo" ? "1v1 Ranked" : "Team Ranked"}
+                  </button>
+                ))}
+              </div>
+            </div>
 
+            {/* ── Ranked stats bar ── */}
             {modeStats && (
-              <section className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard
-                  label="Rating"
-                  value={modeStats.rating?.toString() || "—"}
-                  sub={`Peak ${modeStats.max_rating}`}
-                  badge={
-                    <RankBadge rankLevel={modeStats.rank_level} size="sm" />
-                  }
-                />
-                <StatCard
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="rounded-lg bg-card border border-border/50 px-4 py-3 flex items-center gap-3">
+                  <RankBadge
+                    rankLevel={modeStats.rank_level}
+                    size="sm"
+                    showLabel={false}
+                  />
+                  <div>
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                      Rating
+                    </div>
+                    <div className="text-xl font-bold">
+                      {modeStats.rating || "—"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Peak {modeStats.max_rating}
+                    </div>
+                  </div>
+                </div>
+                <StatPill
                   label="Rank"
-                  value={`#${modeStats.rank?.toLocaleString() || "—"}`}
+                  value={
+                    modeStats.rank ? `#${modeStats.rank.toLocaleString()}` : "—"
+                  }
                   sub={
                     modeStats.rank_level ? titleCase(modeStats.rank_level) : ""
                   }
                 />
-                <StatCard
+                <StatPill
                   label="Win Rate"
-                  value={`${modeStats.win_rate?.toFixed(1) || 0}%`}
-                  sub={`${modeStats.wins_count}W - ${modeStats.losses_count}L`}
+                  value={`${modeStats.win_rate?.toFixed(1) ?? 0}%`}
                   valueClass={
                     modeStats.win_rate >= 50 ? "text-green-400" : "text-red-400"
                   }
+                  sub={`${modeStats.wins_count}W – ${modeStats.losses_count}L`}
                 />
-                <StatCard
+                <StatPill
                   label="Streak"
                   value={`${modeStats.streak > 0 ? "+" : ""}${modeStats.streak}`}
-                  sub={
-                    modeStats.streak > 0
-                      ? "Winning"
-                      : modeStats.streak < 0
-                        ? "Losing"
-                        : "Even"
-                  }
                   valueClass={
                     modeStats.streak > 0
                       ? "text-green-400"
@@ -600,380 +701,286 @@ export default function PlayerAnalysisPage() {
                         ? "text-red-400"
                         : ""
                   }
-                />
-              </section>
-            )}
-
-            {analytics && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-primary" />
-                  Season Form
-                  <span className="text-xs text-muted-foreground font-normal">
-                    ({analytics.totalWins + analytics.totalLosses} games this
-                    season)
-                  </span>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      Rolling 10-game win rate
-                    </div>
-                    <WinRateChart results={analytics.recentResults} />
-                    <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {analytics.totalWins}W - {analytics.totalLosses}L
-                      </span>
-                      <span>{analytics.winRate.toFixed(0)}% overall</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="rounded-lg bg-background/40 border border-border/40 p-3">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                        <Clock className="w-3.5 h-3.5" /> Avg win length
-                      </div>
-                      <div className="text-lg font-bold">
-                        {formatDuration(Math.floor(analytics.avgWinDuration))}
-                      </div>
-                    </div>
-                    <div className="rounded-lg bg-background/40 border border-border/40 p-3">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                        <Clock className="w-3.5 h-3.5" /> Avg loss length
-                      </div>
-                      <div className="text-lg font-bold">
-                        {formatDuration(Math.floor(analytics.avgLossDuration))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* ── TEAM-ONLY SECTIONS ── */}
-            {analytics && mode === "rm_team" && (
-              <>
-                {/* Game format breakdown */}
-                {analytics.formats.length > 0 && (
-                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                      <BarChart2 className="w-4 h-4 text-primary" />
-                      Format Breakdown
-                    </h2>
-                    <FormatDonutChart formats={analytics.formats} />
-                  </section>
-                )}
-
-                {/* Team rating insight */}
-                {(analytics.avgTeamRatingWins > 0 ||
-                  analytics.avgTeamRatingLosses > 0) && (
-                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-primary" />
-                      Teammate Quality Impact
-                    </h2>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="rounded-lg bg-green-500/5 border border-green-500/20 p-4 text-center">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          Avg teammate rating in{" "}
-                          <span className="text-green-400 font-medium">
-                            wins
-                          </span>
-                        </div>
-                        <div className="text-2xl font-bold text-green-400">
-                          {Math.round(analytics.avgTeamRatingWins)}
-                        </div>
-                      </div>
-                      <div className="rounded-lg bg-red-500/5 border border-red-500/20 p-4 text-center">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          Avg teammate rating in{" "}
-                          <span className="text-red-400 font-medium">
-                            losses
-                          </span>
-                        </div>
-                        <div className="text-2xl font-bold text-red-400">
-                          {Math.round(analytics.avgTeamRatingLosses)}
-                        </div>
-                      </div>
-                    </div>
-                    {analytics.avgTeamRatingWins > 0 &&
-                      analytics.avgTeamRatingLosses > 0 && (
-                        <p className="text-xs text-muted-foreground mt-3 text-center">
-                          {analytics.avgTeamRatingWins >
-                          analytics.avgTeamRatingLosses
-                            ? `Wins happen with teammates ~${Math.round(analytics.avgTeamRatingWins - analytics.avgTeamRatingLosses)} rating higher — strong correlation with teammate quality.`
-                            : `Teammate rating has minimal impact on outcomes — performance is consistent regardless of team strength.`}
-                        </p>
-                      )}
-                  </section>
-                )}
-
-                {/* Teammates */}
-                {analytics.mostPlayedTeammates.length > 0 && (
-                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                      <Users className="w-4 h-4 text-primary" />
-                      Teammates
-                      <span className="text-xs text-muted-foreground font-normal">
-                        (min 2 games together)
-                      </span>
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Most played */}
-                      <div>
-                        <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5" /> Most Played With
-                        </div>
-                        <div className="space-y-2">
-                          {analytics.mostPlayedTeammates.map((t) => (
-                            <div
-                              key={t.name}
-                              className="flex items-center gap-3 rounded-lg bg-background/40 border border-border/40 px-3 py-2"
-                            >
-                              <div className="w-7 h-7 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
-                                {t.avatar ? (
-                                  <img
-                                    src={
-                                      t.avatar.startsWith("http")
-                                        ? t.avatar
-                                        : `https:${t.avatar}`
-                                    }
-                                    alt={t.name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = "none";
-                                    }}
-                                  />
-                                ) : (
-                                  <User className="w-3.5 h-3.5 text-muted-foreground" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">
-                                  {t.name}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {t.total} games{" "}
-                                  {t.avgRating > 0 &&
-                                    `• ~${t.avgRating} rating`}
-                                </div>
-                              </div>
-                              <div
-                                className={`text-sm font-bold tabular-nums ${t.winRate >= 55 ? "text-green-400" : t.winRate <= 45 ? "text-red-400" : "text-foreground"}`}
-                              >
-                                {t.winRate.toFixed(0)}%
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      {/* Best & worst by WR */}
-                      <div className="space-y-4">
-                        {analytics.bestTeammates.length > 0 && (
-                          <div>
-                            <div className="text-xs font-medium text-green-400 mb-2 flex items-center gap-1.5">
-                              <TrendingUp className="w-3.5 h-3.5" /> Best Win
-                              Rate With
-                            </div>
-                            <div className="space-y-1.5">
-                              {analytics.bestTeammates.slice(0, 3).map((t) => (
-                                <div
-                                  key={t.name}
-                                  className="flex items-center justify-between text-xs rounded bg-green-500/5 border border-green-500/15 px-3 py-1.5"
-                                >
-                                  <span className="font-medium truncate mr-2">
-                                    {t.name}
-                                  </span>
-                                  <span className="text-green-400 font-bold tabular-nums flex-shrink-0">
-                                    {t.winRate.toFixed(0)}%{" "}
-                                    <span className="text-muted-foreground font-normal">
-                                      ({t.total}g)
-                                    </span>
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {analytics.worstTeammates.length > 0 && (
-                          <div>
-                            <div className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1.5">
-                              <TrendingDown className="w-3.5 h-3.5" /> Lowest
-                              Win Rate With
-                            </div>
-                            <div className="space-y-1.5">
-                              {analytics.worstTeammates.slice(0, 3).map((t) => (
-                                <div
-                                  key={t.name}
-                                  className="flex items-center justify-between text-xs rounded bg-red-500/5 border border-red-500/15 px-3 py-1.5"
-                                >
-                                  <span className="font-medium truncate mr-2">
-                                    {t.name}
-                                  </span>
-                                  <span className="text-red-400 font-bold tabular-nums flex-shrink-0">
-                                    {t.winRate.toFixed(0)}%{" "}
-                                    <span className="text-muted-foreground font-normal">
-                                      ({t.total}g)
-                                    </span>
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* Civ synergies */}
-                {analytics.civSynergies.length > 0 && (
-                  <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                    <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-primary" />
-                      Civ Synergies
-                      <span className="text-xs text-muted-foreground font-normal">
-                        (your civ + teammate civ combos)
-                      </span>
-                    </h2>
-                    <PerfBarChart
-                      data={analytics.civSynergies
-                        .slice(0, 8)
-                        .map((s) => ({
-                          ...s,
-                          key: s.key.split(" + ").map(titleCase).join(" + "),
-                        }))}
-                      maxItems={8}
-                    />
-                  </section>
-                )}
-              </>
-            )}
-
-            {analytics && (
-              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <HighlightCard
-                  title="Strongest Maps"
-                  icon={<Trophy className="w-4 h-4 text-green-400" />}
-                  items={analytics.strongestMaps}
-                  positive
-                />
-                <HighlightCard
-                  title="Weakest Maps"
-                  icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
-                  items={analytics.weakestMaps}
-                  positive={false}
-                />
-                <HighlightCard
-                  title="Strongest Civs"
-                  icon={<CheckCircle2 className="w-4 h-4 text-green-400" />}
-                  items={analytics.strongestCivs.map((c) => ({
-                    ...c,
-                    key: titleCase(c.key),
-                  }))}
-                  positive
-                />
-                <HighlightCard
-                  title="Weakest Civs"
-                  icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
-                  items={analytics.weakestCivs.map((c) => ({
-                    ...c,
-                    key: titleCase(c.key),
-                  }))}
-                  positive={false}
+                  sub={
+                    modeStats.streak > 0
+                      ? "Winning"
+                      : modeStats.streak < 0
+                        ? "Losing"
+                        : "Neutral"
+                  }
                 />
               </div>
             )}
 
-            {analytics && analytics.vsCivs.length > 0 && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <Swords className="w-4 h-4 text-primary" />
-                  Matchup Analysis
-                  <span className="text-xs text-muted-foreground font-normal">
-                    (win rate vs opponent civs, min 2 games)
-                  </span>
-                </h2>
-                <MatchupBarChart
-                  data={analytics.vsCivs.map((m) => ({
-                    ...m,
-                    key: titleCase(m.key),
-                  }))}
-                  maxItems={12}
-                />
-              </section>
-            )}
-
-            {analytics && analytics.civs.length > 0 && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-primary" />
-                  Civilization Performance
-                </h2>
-                <PerfBarChart
-                  data={analytics.civs.map((c) => ({
-                    ...c,
-                    key: titleCase(c.key),
-                  }))}
-                />
-              </section>
-            )}
-
-            {analytics && analytics.maps.length > 0 && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-primary" />
-                  Map Performance
-                </h2>
-                <PerfBarChart data={analytics.maps} />
-              </section>
-            )}
-
-            {recentLosses.length > 0 && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  Recent Losses — Deep Dive
-                </h2>
-                <div className="space-y-2">
-                  {recentLosses.map(({ game, myData, oppCiv }, idx) => (
-                    <LossRow
-                      key={game.game_id}
-                      game={game}
-                      myCiv={myData!.civilization}
-                      oppCiv={oppCiv}
-                      ratingDiff={myData!.rating_diff}
-                      expanded={expandedLoss === idx}
-                      onToggle={() =>
-                        setExpandedLoss(expandedLoss === idx ? null : idx)
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
             {analytics && (
-              <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
-                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-primary" />
-                  Room for Improvement
-                </h2>
-                <ImprovementInsights
-                  analytics={analytics}
-                  streak={modeStats?.streak}
-                />
-              </section>
+              <>
+                {/* ── Season overview ── */}
+                <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                  <SectionTitle
+                    icon={<Zap className="w-4 h-4 text-primary" />}
+                    label="Season Overview"
+                    sub={`${analytics.totalWins + analytics.totalLosses} games · Season 12`}
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2">
+                      <p className="text-[11px] text-muted-foreground mb-2">
+                        Rolling 10-game win rate trend
+                      </p>
+                      <WinRateChart results={analytics.recentResults} />
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-1 gap-3">
+                      <StatPill
+                        label="Overall WR"
+                        value={`${analytics.winRate.toFixed(1)}%`}
+                        valueClass={
+                          analytics.winRate >= 50
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }
+                        sub={`${analytics.totalWins}W – ${analytics.totalLosses}L`}
+                      />
+                      <StatPill
+                        label="Avg win"
+                        value={formatDuration(
+                          Math.floor(analytics.avgWinDuration),
+                        )}
+                        sub="game length"
+                      />
+                      <StatPill
+                        label="Avg loss"
+                        value={formatDuration(
+                          Math.floor(analytics.avgLossDuration),
+                        )}
+                        sub="game length"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── SOLO MODE ── */}
+                {mode === "rm_solo" && (
+                  <>
+                    {/* Civ + Map side by side */}
+                    {(analytics.civs.length > 0 ||
+                      analytics.maps.length > 0) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        {analytics.civs.length > 0 && (
+                          <div className="rounded-xl bg-card border border-border/50 p-5">
+                            <SectionTitle
+                              icon={<Target className="w-4 h-4 text-primary" />}
+                              label="Civilizations"
+                              sub="win rate by civ"
+                            />
+                            <PerfBarChart
+                              data={analytics.civs.map((c) => ({
+                                ...c,
+                                key: titleCase(c.key),
+                              }))}
+                              maxItems={8}
+                            />
+                          </div>
+                        )}
+                        {analytics.maps.length > 0 && (
+                          <div className="rounded-xl bg-card border border-border/50 p-5">
+                            <SectionTitle
+                              icon={<Target className="w-4 h-4 text-primary" />}
+                              label="Maps"
+                              sub="win rate by map"
+                            />
+                            <PerfBarChart data={analytics.maps} maxItems={8} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Matchups full width */}
+                    {analytics.vsCivs.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Swords className="w-4 h-4 text-primary" />}
+                          label="Matchups"
+                          sub="win rate vs opponent civ (min 2 games)"
+                        />
+                        <MatchupBarChart
+                          data={analytics.vsCivs.map((m) => ({
+                            ...m,
+                            key: titleCase(m.key),
+                          }))}
+                          maxItems={14}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── TEAM MODE ── */}
+                {mode === "rm_team" && (
+                  <>
+                    {/* Format donut + teammate quality side by side */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      {analytics.formats.length > 0 && (
+                        <div className="rounded-xl bg-card border border-border/50 p-5">
+                          <SectionTitle
+                            icon={
+                              <BarChart2 className="w-4 h-4 text-primary" />
+                            }
+                            label="Game Formats"
+                            sub="by games played"
+                          />
+                          <FormatDonutChart formats={analytics.formats} />
+                        </div>
+                      )}
+                      {(analytics.avgTeamRatingWins > 0 ||
+                        analytics.avgTeamRatingLosses > 0) && (
+                        <div className="rounded-xl bg-card border border-border/50 p-5">
+                          <SectionTitle
+                            icon={
+                              <TrendingUp className="w-4 h-4 text-primary" />
+                            }
+                            label="Teammate Quality"
+                            sub="avg rating in wins vs losses"
+                          />
+                          <div className="space-y-3 mt-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                In wins
+                              </span>
+                              <span className="text-xl font-bold text-green-400">
+                                {Math.round(analytics.avgTeamRatingWins)}
+                              </span>
+                            </div>
+                            <div className="h-2 bg-border/40 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-green-500 rounded-full"
+                                style={{
+                                  width: `${Math.min(100, (analytics.avgTeamRatingWins / 2000) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                In losses
+                              </span>
+                              <span className="text-xl font-bold text-red-400">
+                                {Math.round(analytics.avgTeamRatingLosses)}
+                              </span>
+                            </div>
+                            <div className="h-2 bg-border/40 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-red-500 rounded-full"
+                                style={{
+                                  width: `${Math.min(100, (analytics.avgTeamRatingLosses / 2000) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            {analytics.avgTeamRatingWins > 0 &&
+                              analytics.avgTeamRatingLosses > 0 && (
+                                <p className="text-xs text-muted-foreground pt-1">
+                                  {analytics.avgTeamRatingWins >
+                                  analytics.avgTeamRatingLosses
+                                    ? `Wins correlate with ~${Math.round(analytics.avgTeamRatingWins - analytics.avgTeamRatingLosses)} higher avg teammate rating.`
+                                    : "Teammate rating has minimal impact on your outcomes."}
+                                </p>
+                              )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Teammates full-width table */}
+                    {analytics.teammates.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Users className="w-4 h-4 text-primary" />}
+                          label="Teammates"
+                          sub="min 2 games · sorted by games played"
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                          {analytics.teammates.slice(0, 12).map((t) => (
+                            <TeammateRow key={t.name} t={t} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Civ + Map side by side */}
+                    {(analytics.civs.length > 0 ||
+                      analytics.maps.length > 0) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        {analytics.civs.length > 0 && (
+                          <div className="rounded-xl bg-card border border-border/50 p-5">
+                            <SectionTitle
+                              icon={<Target className="w-4 h-4 text-primary" />}
+                              label="Civilizations"
+                              sub="win rate by civ"
+                            />
+                            <PerfBarChart
+                              data={analytics.civs.map((c) => ({
+                                ...c,
+                                key: titleCase(c.key),
+                              }))}
+                              maxItems={8}
+                            />
+                          </div>
+                        )}
+                        {analytics.civSynergies.length > 0 && (
+                          <div className="rounded-xl bg-card border border-border/50 p-5">
+                            <SectionTitle
+                              icon={<Shield className="w-4 h-4 text-primary" />}
+                              label="Civ Synergies"
+                              sub="your civ + ally civ"
+                            />
+                            <PerfBarChart
+                              data={analytics.civSynergies
+                                .slice(0, 8)
+                                .map((s) => ({
+                                  ...s,
+                                  key: s.key
+                                    .split(" + ")
+                                    .map(titleCase)
+                                    .join(" + "),
+                                }))}
+                              maxItems={8}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Maps full width */}
+                    {analytics.maps.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Target className="w-4 h-4 text-primary" />}
+                          label="Maps"
+                          sub="win rate by map"
+                        />
+                        <PerfBarChart data={analytics.maps} maxItems={10} />
+                      </div>
+                    )}
+
+                    {/* Matchups vs opponent civs */}
+                    {analytics.vsCivs.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Swords className="w-4 h-4 text-primary" />}
+                          label="Matchups"
+                          sub="win rate vs opponent civ (min 2 games)"
+                        />
+                        <MatchupBarChart
+                          data={analytics.vsCivs.map((m) => ({
+                            ...m,
+                            key: titleCase(m.key),
+                          }))}
+                          maxItems={14}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </>
-        )}
-
-        {!playerData && !loading && (
-          <section className="rounded-xl bg-card border border-border/50 p-10 text-center">
-            <Search className="w-12 h-12 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              Search for a player to begin analysis
-            </p>
-          </section>
         )}
       </div>
     </main>
