@@ -54,6 +54,9 @@ export default function PlayerAnalysisPage() {
   } | null>(null);
   const [mode, setMode] = useState<GameMode>("rm_solo");
   const [expandedLoss, setExpandedLoss] = useState<number | null>(null);
+  const [teammateSort, setTeammateSort] = useState<"games" | "winrate">(
+    "games",
+  );
 
   const SEASON_START = "2026-01-01";
   const LIMIT = 50;
@@ -903,15 +906,41 @@ export default function PlayerAnalysisPage() {
                     {/* Teammates full-width table */}
                     {analytics.teammates.length > 0 && (
                       <div className="rounded-xl bg-card border border-border/50 p-6 mb-4">
-                        <SectionTitle
-                          icon={<Users className="w-4 h-4 text-primary" />}
-                          label="Teammates"
-                          sub="min 2 games · sorted by games played"
-                        />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12">
-                          {analytics.teammates.slice(0, 12).map((t) => (
-                            <TeammateRow key={t.name} t={t} />
-                          ))}
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-sm font-semibold flex items-center gap-2">
+                            <Users className="w-4 h-4 text-primary" />
+                            Teammates
+                            <span className="text-xs text-muted-foreground font-normal">
+                              min 2 games
+                            </span>
+                          </h2>
+                          <div className="inline-flex rounded-md border border-border/50 bg-background/40 p-0.5 text-xs">
+                            {(["games", "winrate"] as const).map((s) => (
+                              <button
+                                key={s}
+                                onClick={() => setTeammateSort(s)}
+                                className={`px-3 py-1 rounded font-medium transition-colors ${
+                                  teammateSort === s
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground hover:text-foreground"
+                                }`}
+                              >
+                                {s === "games" ? "Games played" : "Win rate"}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1">
+                          {[...analytics.teammates]
+                            .sort((a, b) =>
+                              teammateSort === "winrate"
+                                ? b.winRate - a.winRate
+                                : b.total - a.total,
+                            )
+                            .slice(0, 12)
+                            .map((t) => (
+                              <TeammateRow key={t.name} t={t} />
+                            ))}
                         </div>
                       </div>
                     )}
