@@ -282,11 +282,26 @@ export default function PlayerAnalysisPage() {
         .filter((s) => s.total >= minGames)
         .sort((a, b) => b.total - a.total);
 
-    const maps = toSorted(mapStats, 2);
-    const civs = toSorted(civStats, 2);
-    const vsCivs = toSorted(vsCivStats, 2);
+    const toSortedByWR = (
+      m: Map<string, { wins: number; losses: number }>,
+      minGames = 2,
+    ): AggregatedStat[] =>
+      Array.from(m.entries())
+        .map(([key, v]) => ({
+          key,
+          wins: v.wins,
+          losses: v.losses,
+          total: v.wins + v.losses,
+          winRate: (v.wins / (v.wins + v.losses)) * 100,
+        }))
+        .filter((s) => s.total >= minGames)
+        .sort((a, b) => b.winRate - a.winRate);
+
+    const maps = toSortedByWR(mapStats, 2);
+    const civs = toSortedByWR(civStats, 2);
+    const vsCivs = toSortedByWR(vsCivStats, 2);
     const formats = toSorted(formatStats, 1);
-    const civSynergies = toSorted(civSynergyStats, 2);
+    const civSynergies = toSortedByWR(civSynergyStats, 2);
 
     const avg = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
