@@ -159,7 +159,7 @@ export function PerfBarChart({ data, maxItems = 10 }: PerfChartProps) {
         <YAxis
           type="category"
           dataKey="name"
-          width={160}
+          width={190}
           tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
           tickLine={false}
           axisLine={false}

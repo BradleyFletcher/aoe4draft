@@ -300,11 +300,11 @@ export default function PlayerAnalysisPage() {
         .filter((s) => s.total >= minGames)
         .sort((a, b) => b.winRate - a.winRate);
 
-    const maps = toSortedByWR(mapStats, 2);
-    const civs = toSortedByWR(civStats, 2);
-    const vsCivs = toSortedByWR(vsCivStats, 2);
+    const maps = toSortedByWR(mapStats, 3);
+    const civs = toSortedByWR(civStats, 3);
+    const vsCivs = toSortedByWR(vsCivStats, 3);
     const formats = toSorted(formatStats, 1);
-    const civSynergies = toSortedByWR(civSynergyStats, 2);
+    const civSynergies = toSortedByWR(civSynergyStats, 4);
 
     const avg = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
@@ -945,47 +945,39 @@ export default function PlayerAnalysisPage() {
                       </div>
                     )}
 
-                    {/* Civ + Map side by side */}
-                    {(analytics.civs.length > 0 ||
-                      analytics.maps.length > 0) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        {analytics.civs.length > 0 && (
-                          <div className="rounded-xl bg-card border border-border/50 p-5">
-                            <SectionTitle
-                              icon={<Target className="w-4 h-4 text-primary" />}
-                              label="Civilizations"
-                              sub="win rate by civ"
-                            />
-                            <PerfBarChart
-                              data={analytics.civs.map((c) => ({
-                                ...c,
-                                key: titleCase(c.key),
-                              }))}
-                              maxItems={8}
-                            />
-                          </div>
-                        )}
-                        {analytics.civSynergies.length > 0 && (
-                          <div className="rounded-xl bg-card border border-border/50 p-5">
-                            <SectionTitle
-                              icon={<Shield className="w-4 h-4 text-primary" />}
-                              label="Civ Synergies"
-                              sub="your civ + ally civ"
-                            />
-                            <PerfBarChart
-                              data={analytics.civSynergies
-                                .slice(0, 8)
-                                .map((s) => ({
-                                  ...s,
-                                  key: s.key
-                                    .split(" + ")
-                                    .map(titleCase)
-                                    .join(" + "),
-                                }))}
-                              maxItems={8}
-                            />
-                          </div>
-                        )}
+                    {/* Civs full width */}
+                    {analytics.civs.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Target className="w-4 h-4 text-primary" />}
+                          label="Civilizations"
+                          sub="win rate by civ · min 3 games"
+                        />
+                        <PerfBarChart
+                          data={analytics.civs.map((c) => ({
+                            ...c,
+                            key: titleCase(c.key),
+                          }))}
+                          maxItems={10}
+                        />
+                      </div>
+                    )}
+
+                    {/* Civ Synergies full width */}
+                    {analytics.civSynergies.length > 0 && (
+                      <div className="rounded-xl bg-card border border-border/50 p-5 mb-4">
+                        <SectionTitle
+                          icon={<Shield className="w-4 h-4 text-primary" />}
+                          label="Civ Synergies"
+                          sub="your civ + ally civ · min 4 games"
+                        />
+                        <PerfBarChart
+                          data={analytics.civSynergies.map((s) => ({
+                            ...s,
+                            key: s.key.split(" + ").map(titleCase).join(" + "),
+                          }))}
+                          maxItems={10}
+                        />
                       </div>
                     )}
 
