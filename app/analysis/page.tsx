@@ -38,15 +38,50 @@ export default function PlayerAnalysisPage() {
   const [playerData, setPlayerData] = useState<AOE4PlayerStats | null>(null);
   const [recentGames, setRecentGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState<{
+    loaded: number;
+    total: number;
+  } | null>(null);
   const [mode, setMode] = useState<GameMode>("rm_solo");
   const [expandedLoss, setExpandedLoss] = useState<number | null>(null);
 
+  const SEASON_START = "2026-01-01"; // Season 12 start
+  const LIMIT = 50;
+
   const loadGames = async (profileId: number, leaderboard: GameMode) => {
-    const res = await fetch(
-      `https://aoe4world.com/api/v0/players/${profileId}/games?leaderboard=${leaderboard}&limit=50`,
+    setLoadingProgress(null);
+
+    // Page 1 — also tells us total_count
+    const firstUrl = `https://aoe4world.com/api/v0/players/${profileId}/games?leaderboard=${leaderboard}&limit=${LIMIT}&since=${SEASON_START}&page=1`;
+    const firstRes = await fetch(firstUrl);
+    const firstData = await firstRes.json();
+    const totalCount: number = firstData.total_count ?? 0;
+    const firstBatch: Game[] = firstData.games ?? [];
+    const totalPages = Math.ceil(totalCount / LIMIT);
+
+    setLoadingProgress({ loaded: firstBatch.length, total: totalCount });
+
+    if (totalPages <= 1) {
+      setRecentGames(firstBatch);
+      setLoadingProgress(null);
+      return;
+    }
+
+    // Fetch remaining pages in parallel
+    const pageNums = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+    const rest = await Promise.all(
+      pageNums.map((page) =>
+        fetch(
+          `https://aoe4world.com/api/v0/players/${profileId}/games?leaderboard=${leaderboard}&limit=${LIMIT}&since=${SEASON_START}&page=${page}`,
+        )
+          .then((r) => r.json())
+          .then((d) => (d.games as Game[]) ?? []),
+      ),
     );
-    const data = await res.json();
-    setRecentGames(data.games || []);
+
+    const allGames = [...firstBatch, ...rest.flat()];
+    setRecentGames(allGames);
+    setLoadingProgress(null);
   };
 
   const handleSearch = async () => {
@@ -256,6 +291,24 @@ export default function PlayerAnalysisPage() {
               {loading ? "Loading..." : "Analyze"}
             </button>
           </div>
+          {loadingProgress && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Fetching season games...</span>
+                <span>
+                  {loadingProgress.loaded} / {loadingProgress.total}
+                </span>
+              </div>
+              <div className="h-1 bg-background/60 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{
+                    width: `${(loadingProgress.loaded / loadingProgress.total) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </section>
 
         {playerData && (
@@ -364,9 +417,10 @@ export default function PlayerAnalysisPage() {
               <section className="mb-6 rounded-xl bg-card border border-border/50 p-5">
                 <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <Zap className="w-4 h-4 text-primary" />
-                  Recent Form
+                  Season Form
                   <span className="text-xs text-muted-foreground font-normal">
-                    (last {analytics.totalWins + analytics.totalLosses} games)
+                    ({analytics.totalWins + analytics.totalLosses} games this
+                    season)
                   </span>
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
