@@ -181,4 +181,13 @@ export const civilizations: Civilization[] = [
     expansion: "Dynasties of the East",
     flag: "/flags/Tughlaq_Dynasty_AoE4.webp",
   },
+
+  // Yue Fei's Legacy
+  {
+    id: "jindynasty",
+    name: "Jin Dynasty",
+    description: "Cavalry, tributary, and gunpowder civilization",
+    expansion: "Yue Fei's Legacy",
+    flag: "/flags/Jin_Dynasty_AoE4.webp",
+  },
 ];

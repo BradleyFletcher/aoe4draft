@@ -5,6 +5,9 @@ export interface GameMap {
   image?: string;
 }
 
+const YUE_FEIS_LEGACY_MAP_PLACEHOLDER =
+  "/maps/yue-feis-legacy-placeholder.svg";
+
 export const maps: GameMap[] = [
   // A
   {
@@ -25,6 +28,12 @@ export const maps: GameMap[] = [
     name: "Archipelago",
     type: "Water",
     image: "/maps/archipelago.png",
+  },
+  {
+    id: "ascension",
+    name: "Ascension",
+    type: "Hybrid",
+    image: YUE_FEIS_LEGACY_MAP_PLACEHOLDER,
   },
   {
     id: "atacama",
@@ -107,6 +116,12 @@ export const maps: GameMap[] = [
   },
 
   // F
+  {
+    id: "fangs",
+    name: "Fangs",
+    type: "Open",
+    image: YUE_FEIS_LEGACY_MAP_PLACEHOLDER,
+  },
   {
     id: "flankwoods",
     name: "Flankwoods",
@@ -298,6 +313,12 @@ export const maps: GameMap[] = [
     type: "Hybrid",
     image: "/maps/shadow-lake.png",
   },
+  {
+    id: "snake-river",
+    name: "Snake River",
+    type: "Hybrid",
+    image: YUE_FEIS_LEGACY_MAP_PLACEHOLDER,
+  },
   { id: "socotra", name: "Socotra", type: "Open", image: "/maps/socotra.png" },
   {
     id: "sunkenlands",
@@ -347,6 +368,12 @@ export const maps: GameMap[] = [
     name: "Waterlanes",
     type: "Hybrid",
     image: "/maps/waterlanes.png",
+  },
+  {
+    id: "west-lake",
+    name: "West Lake",
+    type: "Hybrid",
+    image: YUE_FEIS_LEGACY_MAP_PLACEHOLDER,
   },
   {
     id: "wetlands",
